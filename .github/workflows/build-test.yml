@@ -541,6 +541,11 @@ jobs:
         with:
           target: x86_64
           args: --release --out aerospike_native --interpreter ${{ matrix.python }}
+      # macOS 27's dyld rejects a misaligned string pool, but only in images
+      # linked against the macOS 27 SDK. The import smoke below catches that
+      # only when the runner has both, so check the layout directly.
+      - name: Check string pool alignment
+        run: python3 .github/scripts/check_macho_strtab.py aerospike_native/*.whl
       # Zero-container smoke: verify the freshly built wheel installs and imports
       # on macOS (catches link/ABI/symbol breakage the build step alone can miss).
       - name: Import smoke test
@@ -599,6 +604,9 @@ jobs:
         with:
           target: aarch64
           args: --release --out aerospike_native --interpreter ${{ matrix.python }}
+      # See macos-x86: the import smoke can't reliably catch this.
+      - name: Check string pool alignment
+        run: python3 .github/scripts/check_macho_strtab.py aerospike_native/*.whl
       # Zero-container smoke: verify the freshly built wheel installs and imports
       # on macOS (catches link/ABI/symbol breakage the build step alone can miss).
       - name: Import smoke test

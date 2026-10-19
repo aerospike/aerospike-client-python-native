@@ -202,6 +202,12 @@ jobs:
           sparse-checkout-cone-mode: false
       - name: Collect build artifacts
         uses: ./.github/actions/collect-build-artifacts
+      - name: Checkout wheel checks
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: native
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
 
       - name: Verify collected Python artifacts
         run: |
@@ -224,6 +230,9 @@ jobs:
             esac
           done
           shopt -s nullglob
+          # macOS 27 refuses to load a misaligned string pool in an image
+          # linked against the macOS 27 SDK.
+          python3 native/.github/scripts/check_macho_strtab.py build-artifacts/*.whl
           for sdist in build-artifacts/*.tar.gz; do
             tar -tzf "$sdist" >/dev/null
           done

@@ -34,7 +34,9 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"], optional = true }
 rustls-pemfile = { version = "2", optional = true }
 webpki-roots = { version = "1.0", optional = true }
-mimalloc = "0.1"
+# v3 (through 3.3.2) segfaults once the thread that first imported the module
+# exits, and on macOS shares a fixed TLS slot with any other bundled v3.
+mimalloc = { version = "0.1", features = ["v2"] }
 rand = { version = "0.8", features = ["small_rng"] }
 
 [build-dependencies]
