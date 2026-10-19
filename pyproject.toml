@@ -32,6 +32,8 @@ Changelog = "https://github.com/aerospike/aerospike-client-python-native/release
 features = ["pyo3/extension-module"]
 module-name = "aerospike_native._native"
 python-source = "python"
+# Source builds need the macOS no-strip setting too.
+include = [{ path = ".cargo/config.toml", format = "sdist" }]
 
 [tool.ruff]
 # Matches PSDK so one lint dialect covers both repos.
