@@ -50,6 +50,7 @@ from aerospike_native import (
     CTX,
     Filter,
     FilterExpression as fe,
+    Host,
     IndexType,
     Key,
     LoopVarPart,
@@ -763,6 +764,26 @@ def test_blocking_core_panic_is_catchable(connect, aerospike_host, use_services_
 
         # The panic unwinds past a pooled connection; it must stay usable.
         assert client.get_blocking(key, policy=ReadPolicy()).bins["m"] == {"x": 15, "y": 5}
+    finally:
+        client.delete_blocking(key, policy=WritePolicy())
+        # The local client owns its runtime and shuts down on drop.
+        if not isinstance(client, _LocalClient):
+            client.close_blocking()
+
+
+@pytest.mark.parametrize(
+    "client_type", [new_client_blocking, _LocalClient], ids=["client", "local_client"],
+)
+def test_blocking_connect_with_hosts(client_type, aerospike_host, use_services_alternate):
+    """Each blocking constructor connects from a list of Host."""
+    name, port = aerospike_host.rsplit(":", 1)
+    cp = ClientPolicy()
+    cp.use_services_alternate = use_services_alternate
+    client = client_type(cp, [Host(name, int(port))])
+    key = Key("test", "blocking", "hosts-1")
+    try:
+        client.put_blocking(key, {"v": 1}, policy=WritePolicy())
+        assert client.get_blocking(key, policy=ReadPolicy()).bins["v"] == 1
     finally:
         client.delete_blocking(key, policy=WritePolicy())
         # The local client owns its runtime and shuts down on drop.

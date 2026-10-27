@@ -17,7 +17,7 @@ import os
 
 import pytest
 
-from aerospike_native import new_client, ClientPolicy
+from aerospike_native import new_client, ClientPolicy, Host
 from aerospike_native.exceptions import ConnectionError, ResultCode
 
 async def test_connect():
@@ -27,6 +27,18 @@ async def test_connect():
     cp.use_services_alternate = True
     client = await new_client(cp, os.environ.get("AEROSPIKE_HOST", "localhost:3000"))
     assert client is not None
+
+async def test_connect_with_hosts():
+    """A list of Host connects, and seeds() reports it in seed-string form."""
+    name, port = os.environ.get("AEROSPIKE_HOST", "localhost:3000").rsplit(":", 1)
+    cp = ClientPolicy()
+    cp.use_services_alternate = True
+    client = await new_client(cp, [Host(name, int(port))])
+    try:
+        assert client.is_connected() is True
+        assert client.seeds() == f"{name}:{port}"
+    finally:
+        await client.close()
 
 async def test_failed_connect():
     """Test basic client connection failure."""

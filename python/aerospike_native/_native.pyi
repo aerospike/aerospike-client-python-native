@@ -58,6 +58,7 @@ __all__ = [
     "HLLWriteFlags",
     "Histogram",
     "HllOperation",
+    "Host",
     "IndexTask",
     "IndexType",
     "Key",
@@ -4251,6 +4252,60 @@ class HllOperation:
         (``HLLWriteFlags.X | HLLWriteFlags.Y``), or a raw ``int``.
         """
 
+@typing.final
+class Host:
+    r"""
+    Seed address of a cluster node.
+
+    Pass a list of these to :func:`new_client` (or :func:`new_client_blocking`)
+    instead of a seed string. Each field is taken as-is, so an IPv6 address
+    or a TLS name needs no quoting or bracketing.
+
+    Example::
+
+        seeds = [Host("10.0.0.1", 3000), Host("fd00::2", 3000)]
+        client = await new_client(ClientPolicy(), seeds)
+    """
+    @property
+    def name(self) -> builtins.str:
+        r"""
+        Hostname or IP address.
+        """
+    @property
+    def port(self) -> builtins.int:
+        r"""
+        Service port.
+        """
+    @property
+    def tls_name(self) -> typing.Optional[builtins.str]:
+        r"""
+        TLS certificate name, or ``None`` for a host reached without TLS.
+        """
+    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __hash__(self) -> builtins.int: ...
+    def __new__(cls, name: builtins.str, port: builtins.int, tls_name: typing.Optional[builtins.str] = None) -> _native.Host:
+        r"""
+        Create a Host.
+
+        Args:
+            name: Hostname or IP address. An IPv6 address is given bare,
+                e.g. ``"fd00::2"``, not ``"[fd00::2]"``.
+            port: Service port.
+            tls_name: Name the node's TLS certificate must carry. ``None``
+                (or blank) for a host reached without TLS.
+
+        Returns:
+            Host
+
+        Raises:
+            ValueError: If *name* is empty or bracketed.
+        """
+    def __str__(self) -> builtins.str:
+        r"""
+        Seed-string form: ``name[:tls_name]:port``, IPv6 bracketed.
+        """
+    def __repr__(self) -> builtins.str: ...
+
 class IndexTask:
     def query_status(self) -> typing.Awaitable[TaskStatus]: ...
     def wait_till_complete(self, sleep_time: builtins.float = 0.25, timeout: typing.Optional[builtins.float] = 60.0) -> typing.Awaitable[bool]: ...
@@ -7057,7 +7112,7 @@ class _LocalClient:
         Server-reported cluster name (see
         :attr:`Client.server_cluster_name`).
         """
-    def __new__(cls, policy: _native.ClientPolicy, seeds: builtins.str) -> _native._LocalClient: ...
+    def __new__(cls, policy: _native.ClientPolicy, seeds: builtins.str  |  typing.Sequence[_native.Host]) -> _native._LocalClient: ...
     def get_blocking(self, key: _native.Key, bins: typing.Optional[typing.Sequence[builtins.str]] = None, *, policy: typing.Optional[_native.ReadPolicy] = None, policy_sc: typing.Optional[_native.ReadPolicy] = None, filter_expression: typing.Optional[_native.FilterExpression] = None, txn: typing.Optional[_native.Txn] = None) -> _native.Record: ...
     def put_blocking(self, key: _native.Key, bins: typing.Mapping[builtins.str, typing.Any], *, policy: typing.Optional[_native.WritePolicy] = None, policy_sc: typing.Optional[_native.WritePolicy] = None, txn: typing.Optional[_native.Txn] = None) -> None: ...
     def delete_blocking(self, key: _native.Key, *, policy: typing.Optional[_native.WritePolicy] = None) -> builtins.bool: ...
@@ -7814,9 +7869,9 @@ def has_any_write_op(operations: typing.Sequence[typing.Any]) -> builtins.bool:
     or the server rejects the per-node group.
     """
 
-def new_client(policy: _native.ClientPolicy, seeds: builtins.str) -> typing.Awaitable[Client]: ...
+def new_client(policy: _native.ClientPolicy, seeds: builtins.str  |  typing.Sequence[_native.Host]) -> typing.Awaitable[Client]: ...
 
-def new_client_blocking(policy: _native.ClientPolicy, seeds: builtins.str) -> _native.Client:
+def new_client_blocking(policy: _native.ClientPolicy, seeds: builtins.str  |  typing.Sequence[_native.Host]) -> _native.Client:
     r"""
     Synchronously create and connect a Client.
 
