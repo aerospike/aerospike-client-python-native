@@ -47,39 +47,51 @@ use crate::IoError;
     // ----------------------------------------------------------------------
     // Shared construction
     //
-    // Both constructors used to build their own root store and config inline,
-    // which is why the surface stayed at "CA file, optionally with client
-    // auth": every new option meant another copy. These helpers hold the parts
-    // that do not vary so protocol and cipher selection can be added once.
+    // The parts both constructors share, so each TLS option is implemented
+    // once rather than per constructor.
     // ----------------------------------------------------------------------
 
-    /// Build the trust anchors: the platform's webpki roots, plus *cafile* when
-    /// one is given. Passing no CA file is a supported configuration -- it
-    /// verifies the server against the system trust store alone, which is what
-    /// a `tls_name`-only setup needs.
+    /// Build the trust anchors.
+    ///
+    /// With *cafile*, only the certificates in that file are trusted: a
+    /// cluster signed by a private CA must not also accept a certificate from
+    /// every public one. Without it, the server is verified against the public
+    /// roots compiled into the client, which is what a `tls_name`-only setup
+    /// needs. Those roots are fixed at build time; OS certificate updates do
+    /// not reach them.
     #[cfg(feature = "tls")]
     fn build_root_store(cafile: Option<&str>) -> PyResult<rustls::RootCertStore> {
         use std::fs::File;
         use std::io::BufReader;
 
-        let mut root_store = rustls::RootCertStore {
-            roots: webpki_roots::TLS_SERVER_ROOTS.into(),
+        let Some(cafile) = cafile else {
+            return Ok(rustls::RootCertStore {
+                roots: webpki_roots::TLS_SERVER_ROOTS.into(),
+            });
         };
 
-        if let Some(cafile) = cafile {
-            let ca_file = File::open(cafile).map_err(|e| {
-                PyErr::new::<IoError, _>(format!("Cannot open CA file {}: {}", cafile, e))
+        let ca_file = File::open(cafile).map_err(|e| {
+            PyErr::new::<IoError, _>(format!("Cannot open CA file {}: {}", cafile, e))
+        })?;
+        let mut ca_reader = BufReader::new(ca_file);
+        let certs: Result<Vec<_>, _> = rustls_pemfile::certs(&mut ca_reader).collect();
+        let certs = certs.map_err(|e| {
+            PyErr::new::<IoError, _>(format!("Cannot parse CA file {}: {}", cafile, e))
+        })?;
+
+        let mut root_store = rustls::RootCertStore::empty();
+        for cert in certs {
+            root_store.add(cert).map_err(|e| {
+                PyErr::new::<IoError, _>(format!("Cannot add CA certificate: {}", e))
             })?;
-            let mut ca_reader = BufReader::new(ca_file);
-            let certs: Result<Vec<_>, _> = rustls_pemfile::certs(&mut ca_reader).collect();
-            let certs = certs.map_err(|e| {
-                PyErr::new::<IoError, _>(format!("Cannot parse CA file {}: {}", cafile, e))
-            })?;
-            for cert in certs {
-                root_store.add(cert).map_err(|e| {
-                    PyErr::new::<IoError, _>(format!("Cannot add CA certificate: {}", e))
-                })?;
-            }
+        }
+        // An empty store fails every handshake with an unknown-issuer error
+        // that never mentions the file, so refuse it here instead.
+        if root_store.is_empty() {
+            return Err(PyErr::new::<IoError, _>(format!(
+                "No CA certificates found in {}",
+                cafile
+            )));
         }
 
         Ok(root_store)
@@ -207,9 +219,11 @@ use crate::IoError;
         /// Create a TlsConfig.
         ///
         /// Args:
-        ///     cafile: Path to a CA certificate file (PEM). Optional -- when
-        ///         omitted the server is verified against the system trust
-        ///         store alone, which is what a ``tls_name``-only setup needs.
+        ///     cafile: Path to a CA certificate file (PEM). When given, only
+        ///         the CAs in this file are trusted. Optional -- when omitted
+        ///         the server is verified against the public roots compiled
+        ///         into the client (not the OS trust store), which is what a
+        ///         ``tls_name``-only setup needs.
         ///     protocols: Allowed TLS versions, e.g. ``["TLSv1.3"]``. Omit for
         ///         the rustls default (TLS 1.2 and 1.3).
         ///     ciphers: Allowed cipher suites by rustls name, e.g.
@@ -259,7 +273,8 @@ use crate::IoError;
         ///
         /// Args:
         ///     cafile: Path to a CA certificate file (PEM), or ``None`` to
-        ///         verify against the system trust store alone.
+        ///         verify against the public roots compiled into the client;
+        ///         see :meth:`TlsConfig`.
         ///     certfile: Path to the client certificate file (PEM).
         ///     keyfile: Path to the client private key file (PEM, PKCS#8).
         ///     protocols: Allowed TLS versions; see :meth:`TlsConfig`.
@@ -319,5 +334,40 @@ use crate::IoError;
                 Some((client_certs, PrivateKeyDer::Pkcs8(client_key))),
             )?;
             Ok(TlsConfig { _as: std::sync::Arc::new(config), for_login_only })
+        }
+    }
+
+    // These never unwrap an `Err` or format a `PyErr`: its `Debug` needs a
+    // live interpreter, which this test binary does not start.
+    #[cfg(all(test, feature = "tls"))]
+    mod tests {
+        use super::build_root_store;
+
+        const TEST_CA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/testdata/test-ca.pem");
+
+        #[test]
+        fn cafile_is_the_only_trust_anchor() {
+            let Ok(store) = build_root_store(Some(TEST_CA)) else {
+                panic!("test CA must load");
+            };
+            assert_eq!(store.len(), 1);
+        }
+
+        #[test]
+        fn bundled_roots_load_without_cafile() {
+            let Ok(store) = build_root_store(None) else {
+                panic!("bundled roots must load");
+            };
+            assert!(!store.is_empty());
+        }
+
+        #[test]
+        fn cafile_without_certificates_is_rejected() {
+            let path = std::env::temp_dir()
+                .join(format!("pnc-empty-ca-{}.pem", std::process::id()));
+            std::fs::write(&path, "").expect("write empty CA file");
+            let result = build_root_store(path.to_str());
+            let _ = std::fs::remove_file(&path);
+            assert!(result.is_err());
         }
     }

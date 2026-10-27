@@ -944,3 +944,25 @@ jobs:
         run: make stubs
       - name: Stubs are current
         run: git diff --exit-code -- python/aerospike_native
+
+  # Rust unit tests. The test binary links libpython, so this runs on the
+  # runner host against setup-python's interpreter; a manylinux container has
+  # no shared libpython to link.
+  rust-unit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.90.0
+      - name: Setup Python
+        id: setup-python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: cargo test
+        env:
+          # PyO3 otherwise links whichever interpreter it finds first.
+          PYO3_PYTHON: ${{ steps.setup-python.outputs.python-path }}
+        run: make test-rust
