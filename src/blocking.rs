@@ -37,6 +37,7 @@ use pyo3_stub_gen::derive::gen_stub_pyfunction;
 use tokio::runtime::Runtime;
 
 use crate::errors::{panic_to_pyerr, RustClientError};
+use crate::host::Seeds;
 use crate::policies::ClientPolicy;
 use crate::Client;
 
@@ -121,21 +122,21 @@ where
 pub(crate) fn new_client_blocking(
     py: Python<'_>,
     policy: ClientPolicy,
-    seeds: String,
+    seeds: Seeds,
 ) -> PyResult<Client> {
     let as_policy = policy._as.clone();
-    let as_seeds = seeds.clone();
+    let seed_string = seeds.to_seed_string();
     let cluster_name = as_policy.cluster_name.clone();
+    log::debug!(target: "aerospike_native", "connecting (blocking) to {}", seed_string);
     let raw = run_blocking(py, async move {
-        log::debug!(target: "aerospike_native", "connecting (blocking) to {}", as_seeds);
-        aerospike_core::Client::new(&as_policy, &as_seeds)
+        aerospike_core::Client::new(&as_policy, seeds.as_to_hosts())
             .await
             .map_err(|e| PyErr::from(RustClientError(e)))
     })?;
-    log::debug!(target: "aerospike_native", "connected (blocking) to {}", seeds);
+    log::debug!(target: "aerospike_native", "connected (blocking) to {}", seed_string);
     Ok(Client {
         _as: Arc::new(raw),
-        seeds,
+        seeds: seed_string,
         cluster_name,
         bridge: None,
     })

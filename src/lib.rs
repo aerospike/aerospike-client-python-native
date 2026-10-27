@@ -53,6 +53,7 @@ mod runtime;
 mod client_runtime;
 mod tasks;
 mod tls;
+mod host;
 mod record;
 mod cdt;
 mod expressions;
@@ -78,6 +79,7 @@ pub use query_plan::*;
 pub use cluster::*;
 pub use server_error::*;
 pub use tls::*;
+pub use host::*;
 pub use string_ops::*;
 pub use metrics::*;
 
@@ -98,9 +100,9 @@ use crate::operations::{
     #[gen_stub_pyfunction(module = "_native")]
     #[pyfunction]
     #[gen_stub(override_return_type(type_repr="typing.Awaitable[Client]", imports=("typing")))]
-    pub fn new_client(py: Python, policy: ClientPolicy, seeds: String) -> PyResult<Py<PyAny>> {
+    pub fn new_client(py: Python, policy: ClientPolicy, seeds: Seeds) -> PyResult<Py<PyAny>> {
         let as_policy = policy._as.clone();
-        let as_seeds = seeds.clone();
+        let seed_string = seeds.to_seed_string();
         let cluster_name = as_policy.cluster_name.clone();
         // Capture the loop the caller is awaiting on; this becomes the bridge's
         // owning loop and every subsequent op on this Client must run on it.
@@ -132,15 +134,15 @@ use crate::operations::{
         // queuing I/O serially behind the global reactor (~5ms latency).
         let bridge_for_construction = bridge.clone();
         Ok(completion::batched_future_into_py(&bridge_for_construction, py, async move {
-            log::debug!(target: "aerospike_native", "connecting to {}", as_seeds);
-            let c = aerospike_core::Client::new(&as_policy, &as_seeds)
+            log::debug!(target: "aerospike_native", "connecting to {}", seed_string);
+            let c = aerospike_core::Client::new(&as_policy, seeds.as_to_hosts())
                 .await
                 .map_err(|e| PyErr::from(RustClientError(e)))?;
 
-            log::debug!(target: "aerospike_native", "connected to {}", seeds);
+            log::debug!(target: "aerospike_native", "connected to {}", seed_string);
             let res = Client {
                 _as: Arc::new(c),
-                seeds: seeds.clone(),
+                seeds: seed_string,
                 cluster_name,
                 bridge: Some(bridge),
             };
@@ -433,7 +435,7 @@ use crate::operations::{
     #[pymethods]
     impl LocalClient {
         #[new]
-        pub fn new(policy: ClientPolicy, seeds: String) -> PyResult<Self> {
+        pub fn new(policy: ClientPolicy, seeds: Seeds) -> PyResult<Self> {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_io()
                 .enable_time()
@@ -444,7 +446,7 @@ use crate::operations::{
             let as_policy = policy._as.clone();
             let cluster_name = as_policy.cluster_name.clone();
             let client = crate::blocking::block_on(&rt, async move {
-                aerospike_core::Client::new(&as_policy, &seeds).await
+                aerospike_core::Client::new(&as_policy, seeds.as_to_hosts()).await
             })?.map_err(|e| PyErr::from(RustClientError(e)))?;
             Ok(LocalClient {
                 rt,
@@ -5302,6 +5304,7 @@ fn _native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Histogram>()?;
     #[cfg(feature = "tls")]
     m.add_class::<TlsConfig>()?;
+    m.add_class::<Host>()?;
 
     m.add_function(wrap_pyfunction!(new_client, m)?)?;
     m.add_function(wrap_pyfunction!(crate::blocking::new_client_blocking, m)?)?;
