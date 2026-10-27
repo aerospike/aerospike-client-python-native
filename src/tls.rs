@@ -17,6 +17,10 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 
 use crate::IoError;
+#[cfg(feature = "tls")]
+use rustls::pki_types::pem::{self, PemObject};
+#[cfg(feature = "tls")]
+use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 
     ////////////////////////////////////////////////////////////////////////////////////////////
     //
@@ -47,42 +51,73 @@ use crate::IoError;
     // ----------------------------------------------------------------------
     // Shared construction
     //
-    // Both constructors used to build their own root store and config inline,
-    // which is why the surface stayed at "CA file, optionally with client
-    // auth": every new option meant another copy. These helpers hold the parts
-    // that do not vary so protocol and cipher selection can be added once.
+    // The parts both constructors share, so each TLS option is implemented
+    // once rather than per constructor.
     // ----------------------------------------------------------------------
 
-    /// Build the trust anchors: the platform's webpki roots, plus *cafile* when
-    /// one is given. Passing no CA file is a supported configuration -- it
-    /// verifies the server against the system trust store alone, which is what
-    /// a `tls_name`-only setup needs.
+    /// Build the trust anchors.
+    ///
+    /// With *cafile*, only the certificates in that file are trusted: a
+    /// cluster signed by a private CA must not also accept a certificate from
+    /// every public one. Without it, the server is verified against the public
+    /// roots compiled into the client, which is what a `tls_name`-only setup
+    /// needs. Those roots are fixed at build time; OS certificate updates do
+    /// not reach them.
     #[cfg(feature = "tls")]
     fn build_root_store(cafile: Option<&str>) -> PyResult<rustls::RootCertStore> {
-        use std::fs::File;
-        use std::io::BufReader;
-
-        let mut root_store = rustls::RootCertStore {
-            roots: webpki_roots::TLS_SERVER_ROOTS.into(),
+        let Some(cafile) = cafile else {
+            return Ok(rustls::RootCertStore {
+                roots: webpki_roots::TLS_SERVER_ROOTS.into(),
+            });
         };
 
-        if let Some(cafile) = cafile {
-            let ca_file = File::open(cafile).map_err(|e| {
-                PyErr::new::<IoError, _>(format!("Cannot open CA file {}: {}", cafile, e))
+        let mut root_store = rustls::RootCertStore::empty();
+        for cert in load_pem_certs(cafile, "CA file")? {
+            root_store.add(cert).map_err(|e| {
+                PyErr::new::<IoError, _>(format!("Cannot add CA certificate: {}", e))
             })?;
-            let mut ca_reader = BufReader::new(ca_file);
-            let certs: Result<Vec<_>, _> = rustls_pemfile::certs(&mut ca_reader).collect();
-            let certs = certs.map_err(|e| {
-                PyErr::new::<IoError, _>(format!("Cannot parse CA file {}: {}", cafile, e))
-            })?;
-            for cert in certs {
-                root_store.add(cert).map_err(|e| {
-                    PyErr::new::<IoError, _>(format!("Cannot add CA certificate: {}", e))
-                })?;
-            }
+        }
+        // An empty store fails every handshake with an unknown-issuer error
+        // that never mentions the file, so refuse it here instead.
+        if root_store.is_empty() {
+            return Err(PyErr::new::<IoError, _>(format!(
+                "No CA certificates found in {}",
+                cafile
+            )));
         }
 
         Ok(root_store)
+    }
+
+    /// Read every certificate in the PEM file at *path*; *what* names the file
+    /// in error messages.
+    #[cfg(feature = "tls")]
+    fn load_pem_certs(path: &str, what: &str) -> PyResult<Vec<CertificateDer<'static>>> {
+        CertificateDer::pem_file_iter(path)
+            .map_err(|e| pem_error(e, path, what))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| pem_error(e, path, what))
+    }
+
+    /// Read the first PKCS#8 private key in the PEM file at *path*.
+    #[cfg(feature = "tls")]
+    fn load_pem_pkcs8_key(path: &str) -> PyResult<PrivatePkcs8KeyDer<'static>> {
+        PrivatePkcs8KeyDer::from_pem_file(path).map_err(|e| match e {
+            pem::Error::NoItemsFound => {
+                PyErr::new::<IoError, _>(format!("No private key found in {}", path))
+            }
+            e => pem_error(e, path, "key file"),
+        })
+    }
+
+    /// Convert a PEM read failure on the file at *path* into an `IoError`.
+    #[cfg(feature = "tls")]
+    fn pem_error(e: pem::Error, path: &str, what: &str) -> PyErr {
+        let message = match e {
+            pem::Error::Io(e) => format!("Cannot open {} {}: {}", what, path, e),
+            e => format!("Cannot parse {} {}: {}", what, path, e),
+        };
+        PyErr::new::<IoError, _>(message)
     }
 
     /// Resolve protocol-version names to rustls versions.
@@ -207,9 +242,11 @@ use crate::IoError;
         /// Create a TlsConfig.
         ///
         /// Args:
-        ///     cafile: Path to a CA certificate file (PEM). Optional -- when
-        ///         omitted the server is verified against the system trust
-        ///         store alone, which is what a ``tls_name``-only setup needs.
+        ///     cafile: Path to a CA certificate file (PEM). When given, only
+        ///         the CAs in this file are trusted. Optional -- when omitted
+        ///         the server is verified against the public roots compiled
+        ///         into the client (not the OS trust store), which is what a
+        ///         ``tls_name``-only setup needs.
         ///     protocols: Allowed TLS versions, e.g. ``["TLSv1.3"]``. Omit for
         ///         the rustls default (TLS 1.2 and 1.3).
         ///     ciphers: Allowed cipher suites by rustls name, e.g.
@@ -259,7 +296,8 @@ use crate::IoError;
         ///
         /// Args:
         ///     cafile: Path to a CA certificate file (PEM), or ``None`` to
-        ///         verify against the system trust store alone.
+        ///         verify against the public roots compiled into the client;
+        ///         see :meth:`TlsConfig`.
         ///     certfile: Path to the client certificate file (PEM).
         ///     keyfile: Path to the client private key file (PEM, PKCS#8).
         ///     protocols: Allowed TLS versions; see :meth:`TlsConfig`.
@@ -279,45 +317,56 @@ use crate::IoError;
             ciphers: Option<Vec<String>>,
             for_login_only: bool,
         ) -> PyResult<Self> {
-            use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-            use std::fs::File;
-            use std::io::BufReader;
-
             let root_store = build_root_store(cafile.as_deref())?;
-
-            let client_cert_file = File::open(&certfile).map_err(|e| {
-                PyErr::new::<IoError, _>(format!(
-                    "Cannot open client cert file {}: {}", certfile, e
-                ))
-            })?;
-            let mut client_cert_reader = BufReader::new(client_cert_file);
-            let client_certs: Result<Vec<CertificateDer>, _> =
-                rustls_pemfile::certs(&mut client_cert_reader).collect();
-            let client_certs = client_certs.map_err(|e| {
-                PyErr::new::<IoError, _>(format!(
-                    "Cannot parse client cert file {}: {}", certfile, e
-                ))
-            })?;
-
-            let key_file = File::open(&keyfile).map_err(|e| {
-                PyErr::new::<IoError, _>(format!("Cannot open key file {}: {}", keyfile, e))
-            })?;
-            let mut key_reader = BufReader::new(key_file);
-            let keys: Result<Vec<_>, _> =
-                rustls_pemfile::pkcs8_private_keys(&mut key_reader).collect();
-            let mut keys = keys.map_err(|e| {
-                PyErr::new::<IoError, _>(format!("Cannot parse key file {}: {}", keyfile, e))
-            })?;
-            let client_key = keys.pop().ok_or_else(|| {
-                PyErr::new::<IoError, _>(format!("No private key found in {}", keyfile))
-            })?;
+            let client_certs = load_pem_certs(&certfile, "client cert file")?;
+            let client_key = load_pem_pkcs8_key(&keyfile)?;
 
             let config = build_client_config(
                 root_store,
                 protocols.as_deref(),
                 ciphers.as_deref(),
-                Some((client_certs, PrivateKeyDer::Pkcs8(client_key))),
+                Some((client_certs, client_key.into())),
             )?;
             Ok(TlsConfig { _as: std::sync::Arc::new(config), for_login_only })
+        }
+    }
+
+    // These never unwrap an `Err` or format a `PyErr`: its `Debug` needs a
+    // live interpreter, which this test binary does not start.
+    #[cfg(all(test, feature = "tls"))]
+    mod tests {
+        use super::{build_root_store, load_pem_pkcs8_key};
+
+        const TEST_CA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/testdata/test-ca.pem");
+
+        #[test]
+        fn cafile_is_the_only_trust_anchor() {
+            let Ok(store) = build_root_store(Some(TEST_CA)) else {
+                panic!("test CA must load");
+            };
+            assert_eq!(store.len(), 1);
+        }
+
+        #[test]
+        fn bundled_roots_load_without_cafile() {
+            let Ok(store) = build_root_store(None) else {
+                panic!("bundled roots must load");
+            };
+            assert!(!store.is_empty());
+        }
+
+        #[test]
+        fn cafile_without_certificates_is_rejected() {
+            let path = std::env::temp_dir()
+                .join(format!("pnc-empty-ca-{}.pem", std::process::id()));
+            std::fs::write(&path, "").expect("write empty CA file");
+            let result = build_root_store(path.to_str());
+            let _ = std::fs::remove_file(&path);
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn key_file_without_a_key_is_rejected() {
+            assert!(load_pem_pkcs8_key(TEST_CA).is_err());
         }
     }

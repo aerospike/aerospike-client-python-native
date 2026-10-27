@@ -6575,9 +6575,11 @@ class TlsConfig:
         Create a TlsConfig.
 
         Args:
-            cafile: Path to a CA certificate file (PEM). Optional -- when
-                omitted the server is verified against the system trust
-                store alone, which is what a ``tls_name``-only setup needs.
+            cafile: Path to a CA certificate file (PEM). When given, only
+                the CAs in this file are trusted. Optional -- when omitted
+                the server is verified against the public roots compiled
+                into the client (not the OS trust store), which is what a
+                ``tls_name``-only setup needs.
             protocols: Allowed TLS versions, e.g. ``["TLSv1.3"]``. Omit for
                 the rustls default (TLS 1.2 and 1.3).
             ciphers: Allowed cipher suites by rustls name, e.g.
@@ -6602,7 +6604,8 @@ class TlsConfig:
 
         Args:
             cafile: Path to a CA certificate file (PEM), or ``None`` to
-                verify against the system trust store alone.
+                verify against the public roots compiled into the client;
+                see :meth:`TlsConfig`.
             certfile: Path to the client certificate file (PEM).
             keyfile: Path to the client private key file (PEM, PKCS#8).
             protocols: Allowed TLS versions; see :meth:`TlsConfig`.

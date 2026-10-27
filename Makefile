@@ -6,7 +6,7 @@ user ?= ""
 pass ?= ""
 ns ?= "test"
 
-.PHONY: build test test-unit test-int install clean stubs local-cargo git-cargo lint
+.PHONY: build test test-unit test-int test-rust install clean stubs local-cargo git-cargo lint
 all: lint dev build test install clean
 
 local-cargo:
@@ -73,6 +73,11 @@ test-unit:
 test-int:
 	@python/clean_caches.sh || true
 	source aerospike.env 2>/dev/null || source aerospike.env.example && python -m pytest python/tests/integration
+
+test-rust:
+	# extension-module leaves Python symbols unresolved, so a test binary
+	# built with the default features cannot link; this links libpython.
+	cargo test --locked --no-default-features --features tls --lib
 
 dev-test: dev stubs test
 

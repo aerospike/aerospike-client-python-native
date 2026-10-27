@@ -235,12 +235,12 @@ class TestTlsConfigOptions:
     caller restricting protocols or ciphers and getting neither, with no error.
     """
 
-    def test_system_trust_store_needs_no_ca_file(self):
+    def test_bundled_roots_need_no_ca_file(self):
         """No CA file is a supported configuration, not "no TLS".
 
-        A `tls_name`-only setup verifies against the system trust store. This
-        used to be unreachable: the builder returned None without a CA file,
-        which silently produced a plaintext connection.
+        A `tls_name`-only setup verifies against the public roots compiled
+        into the client. A builder that returned None here would silently
+        produce a plaintext connection.
         """
         assert TlsConfig() is not None
 
