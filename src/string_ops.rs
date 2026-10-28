@@ -434,6 +434,15 @@ pub struct StringOperation {
 #[gen_stub_pymethods]
 #[pymethods]
 impl StringOperation {
+    /// ``True`` when re-sending this operation after an in-doubt attempt
+    /// leaves the record as one application would. Reads and ``to_string``
+    /// are idempotent; every modify operation is not. See
+    /// :attr:`Operation.is_idempotent` for the rule.
+    #[getter]
+    pub fn is_idempotent(&self) -> bool {
+        self.op.is_idempotent()
+    }
+
     // -----------------------------------------------------------------
     // Read operations (STRING_READ, op-type 17, sub-ops 0..16)
     // -----------------------------------------------------------------

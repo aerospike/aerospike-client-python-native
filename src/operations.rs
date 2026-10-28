@@ -375,6 +375,184 @@ use crate::string_ops::{StringNumericType, StringOperation};
         StringToString(String),
     }
 
+    impl OperationType {
+        /// Whether re-sending this operation after an in-doubt attempt leaves
+        /// the record as one application would.
+        ///
+        /// Reads, `Put`, `Delete`, and `Touch` are idempotent. `Add`, `Append`,
+        /// `Prepend`, and every list, map, bit, HLL, string, and expression
+        /// modify operation are reported non-idempotent as a family: a few
+        /// members are idempotent in effect (`ListClear`, `HllAdd`), but the
+        /// family is what retry classification keys on, and refining a member
+        /// is a change to this table alone. The match is exhaustive on
+        /// purpose, so a new variant has to be placed here before it builds.
+        pub(crate) fn is_idempotent(&self) -> bool {
+            match self {
+                OperationType::Get()
+                | OperationType::GetBin(_)
+                | OperationType::GetHeader()
+                | OperationType::Put(..)
+                | OperationType::Delete()
+                | OperationType::Touch()
+                | OperationType::ListGet(..)
+                | OperationType::ListSize(_)
+                | OperationType::ListJoin(..)
+                | OperationType::ListGetRange(..)
+                | OperationType::ListGetRangeFrom(..)
+                | OperationType::ListGetByIndex(..)
+                | OperationType::ListGetByIndexRange(..)
+                | OperationType::ListGetByRank(..)
+                | OperationType::ListGetByRankRange(..)
+                | OperationType::ListGetByValue(..)
+                | OperationType::ListGetByValueRange(..)
+                | OperationType::ListGetByValueList(..)
+                | OperationType::ListGetByValueRelativeRankRange(..)
+                | OperationType::MapSize(_)
+                | OperationType::MapGetByKey(..)
+                | OperationType::MapGetByKeyRange(..)
+                | OperationType::MapGetByIndex(..)
+                | OperationType::MapGetByIndexRange(..)
+                | OperationType::MapGetByIndexRangeFrom(..)
+                | OperationType::MapGetByRank(..)
+                | OperationType::MapGetByRankRange(..)
+                | OperationType::MapGetByRankRangeFrom(..)
+                | OperationType::MapGetByValue(..)
+                | OperationType::MapGetByValueRange(..)
+                | OperationType::MapGetByKeyList(..)
+                | OperationType::MapGetByValueList(..)
+                | OperationType::MapGetByKeyRelativeIndexRange(..)
+                | OperationType::MapGetByValueRelativeRankRange(..)
+                | OperationType::BitGet(..)
+                | OperationType::BitCount(..)
+                | OperationType::BitLScan(..)
+                | OperationType::BitRScan(..)
+                | OperationType::BitGetInt(..)
+                | OperationType::BitB64Encode(..)
+                | OperationType::HllGetCount(_)
+                | OperationType::HllDescribe(_)
+                | OperationType::HllGetUnion(..)
+                | OperationType::HllGetUnionCount(..)
+                | OperationType::HllGetIntersectCount(..)
+                | OperationType::HllGetSimilarity(..)
+                | OperationType::ExpRead(..)
+                | OperationType::CdtSelectByPath(..)
+                | OperationType::StringStrlen(_)
+                | OperationType::StringSubstr(..)
+                | OperationType::StringCharAt(..)
+                | OperationType::StringFind(..)
+                | OperationType::StringContains(..)
+                | OperationType::StringStartsWith(..)
+                | OperationType::StringEndsWith(..)
+                | OperationType::StringToInteger(_)
+                | OperationType::StringToDouble(_)
+                | OperationType::StringByteLength(_)
+                | OperationType::StringIsNumeric(..)
+                | OperationType::StringIsUpper(_)
+                | OperationType::StringIsLower(_)
+                | OperationType::StringToBlob(_)
+                | OperationType::StringSplit(..)
+                | OperationType::StringB64Decode(_)
+                | OperationType::StringRegexCompare(..)
+                | OperationType::StringToString(_) => true,
+                OperationType::Add(..)
+                | OperationType::Append(..)
+                | OperationType::Prepend(..)
+                | OperationType::ListPop(..)
+                | OperationType::ListClear(_)
+                | OperationType::ListSet(..)
+                | OperationType::ListRemove(..)
+                | OperationType::ListRemoveRange(..)
+                | OperationType::ListPopRange(..)
+                | OperationType::ListPopRangeFrom(..)
+                | OperationType::ListRemoveRangeFrom(..)
+                | OperationType::ListTrim(..)
+                | OperationType::ListAppend(..)
+                | OperationType::ListAppendItems(..)
+                | OperationType::ListInsert(..)
+                | OperationType::ListInsertItems(..)
+                | OperationType::ListIncrement(..)
+                | OperationType::ListSort(..)
+                | OperationType::ListSetOrder(..)
+                | OperationType::ListRemoveByIndex(..)
+                | OperationType::ListRemoveByIndexRange(..)
+                | OperationType::ListRemoveByRank(..)
+                | OperationType::ListRemoveByRankRange(..)
+                | OperationType::ListRemoveByValue(..)
+                | OperationType::ListRemoveByValueList(..)
+                | OperationType::ListRemoveByValueRange(..)
+                | OperationType::ListRemoveByValueRelativeRankRange(..)
+                | OperationType::ListCreate(..)
+                | OperationType::ListSetWithPolicy(..)
+                | OperationType::ListIncrementByOne(..)
+                | OperationType::ListIncrementByOneWithPolicy(..)
+                | OperationType::ListCreateWithIndex(..)
+                | OperationType::ListSetOrderWithIndex(..)
+                | OperationType::MapClear(_)
+                | OperationType::MapPut(..)
+                | OperationType::MapPutItems(..)
+                | OperationType::MapIncrementValue(..)
+                | OperationType::MapDecrementValue(..)
+                | OperationType::MapRemoveByKey(..)
+                | OperationType::MapRemoveByKeyRange(..)
+                | OperationType::MapRemoveByIndex(..)
+                | OperationType::MapRemoveByIndexRange(..)
+                | OperationType::MapRemoveByIndexRangeFrom(..)
+                | OperationType::MapRemoveByRank(..)
+                | OperationType::MapRemoveByRankRange(..)
+                | OperationType::MapRemoveByRankRangeFrom(..)
+                | OperationType::MapRemoveByValue(..)
+                | OperationType::MapRemoveByValueRange(..)
+                | OperationType::MapRemoveByKeyList(..)
+                | OperationType::MapRemoveByValueList(..)
+                | OperationType::MapSetMapPolicy(..)
+                | OperationType::MapRemoveByKeyRelativeIndexRange(..)
+                | OperationType::MapRemoveByValueRelativeRankRange(..)
+                | OperationType::MapCreate(..)
+                | OperationType::MapCreateWithIndex(..)
+                | OperationType::MapSetPolicy(..)
+                | OperationType::BitResize(..)
+                | OperationType::BitInsert(..)
+                | OperationType::BitRemove(..)
+                | OperationType::BitSet(..)
+                | OperationType::BitOr(..)
+                | OperationType::BitXor(..)
+                | OperationType::BitAnd(..)
+                | OperationType::BitNot(..)
+                | OperationType::BitLShift(..)
+                | OperationType::BitRShift(..)
+                | OperationType::BitAdd(..)
+                | OperationType::BitSubtract(..)
+                | OperationType::BitSetInt(..)
+                | OperationType::HllInit(..)
+                | OperationType::HllAdd(..)
+                | OperationType::HllRefreshCount(_)
+                | OperationType::HllFold(..)
+                | OperationType::HllSetUnion(..)
+                | OperationType::ExpWrite(..)
+                | OperationType::CdtModifyByPath(..)
+                | OperationType::StringInsert(..)
+                | OperationType::StringOverwrite(..)
+                | OperationType::StringConcat(..)
+                | OperationType::StringAppend(..)
+                | OperationType::StringPrepend(..)
+                | OperationType::StringSnip(..)
+                | OperationType::StringReplace(..)
+                | OperationType::StringReplaceAll(..)
+                | OperationType::StringUpper(..)
+                | OperationType::StringLower(..)
+                | OperationType::StringCaseFold(..)
+                | OperationType::StringNormalizeNfc(..)
+                | OperationType::StringTrimStart(..)
+                | OperationType::StringTrimEnd(..)
+                | OperationType::StringTrim(..)
+                | OperationType::StringPadStart(..)
+                | OperationType::StringPadEnd(..)
+                | OperationType::StringRepeat(..)
+                | OperationType::StringRegexReplace(..) => false,
+            }
+        }
+    }
+
     /// Python wrapper for Operation enum.
     #[gen_stub_pyclass(module = "_native")]
     #[pyclass(from_py_object, subclass)]
@@ -398,6 +576,20 @@ use crate::string_ops::{StringNumericType, StringOperation};
         #[new]
         pub fn new() -> Self {
             Self::default()
+        }
+
+        /// ``True`` when re-sending this operation after an in-doubt attempt
+        /// leaves the record as one application would, so a retry is safe.
+        ///
+        /// Reads, ``put``, ``delete``, and ``touch`` are idempotent. ``add``,
+        /// ``append``, ``prepend``, and every list, map, bit, HLL, string, and
+        /// expression modify operation are not, as a family: a few members are
+        /// idempotent in effect (list ``clear``, HLL ``add``), but retry
+        /// classification keys on the family. Every operation class carries
+        /// this property.
+        #[getter]
+        pub fn is_idempotent(&self) -> bool {
+            self.op.is_idempotent()
         }
 
         /// Name of the bin this operation targets, or ``None`` when it targets
@@ -514,6 +706,15 @@ use crate::string_ops::{StringNumericType, StringOperation};
     #[gen_stub_pymethods]
     #[pymethods]
     impl ListOperation {
+        /// ``True`` when re-sending this operation after an in-doubt attempt
+        /// leaves the record as one application would. Reads are idempotent;
+        /// every modify operation of this class is not. See
+        /// :attr:`Operation.is_idempotent` for the rule.
+        #[getter]
+        pub fn is_idempotent(&self) -> bool {
+            self.op.is_idempotent()
+        }
+
         /// Create a List get operation (gets element at index).
         #[staticmethod]
         pub fn get(bin_name: String, index: i64) -> Self {
@@ -939,6 +1140,15 @@ use crate::string_ops::{StringNumericType, StringOperation};
     #[gen_stub_pymethods]
     #[pymethods]
     impl MapOperation {
+        /// ``True`` when re-sending this operation after an in-doubt attempt
+        /// leaves the record as one application would. Reads are idempotent;
+        /// every modify operation of this class is not. See
+        /// :attr:`Operation.is_idempotent` for the rule.
+        #[getter]
+        pub fn is_idempotent(&self) -> bool {
+            self.op.is_idempotent()
+        }
+
         /// Create a Map size operation (gets map size).
         #[staticmethod]
         pub fn size(bin_name: String) -> Self {
@@ -1279,6 +1489,15 @@ use crate::string_ops::{StringNumericType, StringOperation};
     #[gen_stub_pymethods]
     #[pymethods]
     impl BitOperation {
+        /// ``True`` when re-sending this operation after an in-doubt attempt
+        /// leaves the record as one application would. Reads are idempotent;
+        /// every modify operation of this class is not. See
+        /// :attr:`Operation.is_idempotent` for the rule.
+        #[getter]
+        pub fn is_idempotent(&self) -> bool {
+            self.op.is_idempotent()
+        }
+
         /// Create a Bit resize operation (resizes byte array, requires BitPolicy).
         #[staticmethod]
         pub fn resize(bin_name: String, byte_size: i64, resize_flags: Option<BitwiseResizeFlags>, policy: BitPolicy) -> Self {
@@ -1475,6 +1694,15 @@ use crate::string_ops::{StringNumericType, StringOperation};
     #[gen_stub_pymethods]
     #[pymethods]
     impl HllOperation {
+        /// ``True`` when re-sending this operation after an in-doubt attempt
+        /// leaves the record as one application would. Reads are idempotent;
+        /// every modify operation of this class is not. See
+        /// :attr:`Operation.is_idempotent` for the rule.
+        #[getter]
+        pub fn is_idempotent(&self) -> bool {
+            self.op.is_idempotent()
+        }
+
         /// Create HLL init operation.
         /// Server creates a new HLL or resets an existing HLL.
         /// Server does not return a value.
@@ -1647,6 +1875,15 @@ use crate::string_ops::{StringNumericType, StringOperation};
     #[gen_stub_pymethods]
     #[pymethods]
     impl ExpOperation {
+        /// ``True`` when re-sending this operation after an in-doubt attempt
+        /// leaves the record as one application would. Reads are idempotent;
+        /// every modify operation of this class is not. See
+        /// :attr:`Operation.is_idempotent` for the rule.
+        #[getter]
+        pub fn is_idempotent(&self) -> bool {
+            self.op.is_idempotent()
+        }
+
         /// Create expression read operation.
         ///
         /// Evaluates the expression and returns the result. The result is returned
@@ -1728,6 +1965,15 @@ use crate::string_ops::{StringNumericType, StringOperation};
     #[gen_stub_pymethods]
     #[pymethods]
     impl CdtOperation {
+        /// ``True`` when re-sending this operation after an in-doubt attempt
+        /// leaves the record as one application would. Reads are idempotent;
+        /// every modify operation of this class is not. See
+        /// :attr:`Operation.is_idempotent` for the rule.
+        #[getter]
+        pub fn is_idempotent(&self) -> bool {
+            self.op.is_idempotent()
+        }
+
         /// Create a CDT path select operation.
         ///
         /// Reads nested CDT data identified by the given path context, returning

@@ -21,10 +21,16 @@ from aerospike_native import (
     MapOperation,
     BitOperation,
     HllOperation,
+    CdtOperation,
+    ExpOperation,
+    StringOperation,
+    FilterExpression as fe,
     ListPolicy,
     ListOrderType,
     ListReturnType,
     ListSortFlags,
+    ModifyFlags,
+    SelectFlags,
     MapPolicy,
     MapOrder,
     MapReturnType,
@@ -412,3 +418,62 @@ class TestHllOperation:
     def test_get_similarity(self):
         op = HllOperation.get_similarity("hllbin", [])
         assert isinstance(op, HllOperation)
+
+
+_IDEMPOTENT = [
+    pytest.param(lambda: Operation.get(), id="get"),
+    pytest.param(lambda: Operation.get_bin("v"), id="get_bin"),
+    pytest.param(lambda: Operation.get_header(), id="get_header"),
+    pytest.param(lambda: Operation.put("v", 1), id="put"),
+    pytest.param(lambda: Operation.delete(), id="delete"),
+    pytest.param(lambda: Operation.touch(), id="touch"),
+    pytest.param(lambda: ListOperation.size("l"), id="list_size"),
+    pytest.param(lambda: ListOperation.get_by_index("l", 0, ListReturnType.VALUE), id="list_get_by_index"),
+    pytest.param(lambda: MapOperation.size("m"), id="map_size"),
+    pytest.param(lambda: MapOperation.get_by_key("m", "k", MapReturnType.VALUE), id="map_get_by_key"),
+    pytest.param(lambda: BitOperation.get("b", 0, 8), id="bit_get"),
+    pytest.param(lambda: BitOperation.count("b", 0, 8), id="bit_count"),
+    pytest.param(lambda: HllOperation.get_count("h"), id="hll_get_count"),
+    pytest.param(lambda: ExpOperation.read("r", fe.int_bin("v")), id="exp_read"),
+    pytest.param(
+        lambda: CdtOperation.select_by_path("c", SelectFlags.VALUE, [CTX.map_key("k")]),
+        id="cdt_select_by_path",
+    ),
+    pytest.param(lambda: StringOperation.strlen("s"), id="string_strlen"),
+    pytest.param(lambda: StringOperation.to_string("s"), id="string_to_string"),
+]
+
+_NOT_IDEMPOTENT = [
+    pytest.param(lambda: Operation.add("v", 1), id="add"),
+    pytest.param(lambda: Operation.append("v", "x"), id="append"),
+    pytest.param(lambda: Operation.prepend("v", "x"), id="prepend"),
+    pytest.param(lambda: ListOperation.append("l", 1, ListPolicy()), id="list_append"),
+    pytest.param(lambda: ListOperation.clear("l"), id="list_clear"),
+    pytest.param(lambda: ListOperation.remove_by_value("l", 1, ListReturnType.NONE), id="list_remove_by_value"),
+    pytest.param(lambda: MapOperation.put("m", "k", 1, MapPolicy()), id="map_put"),
+    pytest.param(lambda: MapOperation.clear("m"), id="map_clear"),
+    pytest.param(lambda: MapOperation.increment_value("m", "k", 1, MapPolicy()), id="map_increment"),
+    pytest.param(lambda: BitOperation.set("b", 0, 8, b"\xff", BitPolicy()), id="bit_set"),
+    pytest.param(lambda: HllOperation.add("h", [1, 2]), id="hll_add"),
+    pytest.param(lambda: HllOperation.init("h", 8), id="hll_init"),
+    pytest.param(lambda: ExpOperation.write("v", fe.int_val(1)), id="exp_write"),
+    pytest.param(
+        lambda: CdtOperation.modify_by_path(
+            "c", ModifyFlags.DEFAULT, fe.int_val(1), [CTX.map_key("k")]),
+        id="cdt_modify_by_path",
+    ),
+    pytest.param(lambda: StringOperation.append("s", "x"), id="string_append"),
+    pytest.param(lambda: StringOperation.upper("s"), id="string_upper"),
+]
+
+
+class TestIsIdempotent:
+    """Reads, put, delete, and touch may be re-sent; every modify family may not."""
+
+    @pytest.mark.parametrize("make", _IDEMPOTENT)
+    def test_idempotent(self, make):
+        assert make().is_idempotent is True
+
+    @pytest.mark.parametrize("make", _NOT_IDEMPOTENT)
+    def test_not_idempotent(self, make):
+        assert make().is_idempotent is False

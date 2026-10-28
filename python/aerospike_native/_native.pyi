@@ -555,6 +555,14 @@ class BitOperation:
     r"""
     Bit operations. Create bit operations used by the client's `operate()` method.
     """
+    @property
+    def is_idempotent(self) -> builtins.bool:
+        r"""
+        ``True`` when re-sending this operation after an in-doubt attempt
+        leaves the record as one application would. Reads are idempotent;
+        every modify operation of this class is not. See
+        :attr:`Operation.is_idempotent` for the rule.
+        """
     @staticmethod
     def resize(bin_name: builtins.str, byte_size: builtins.int, resize_flags: typing.Optional[_native.BitwiseResizeFlags], policy: _native.BitPolicy) -> _native.BitOperation:
         r"""
@@ -834,6 +842,14 @@ class CdtOperation:
 
     Requires Aerospike Server version >= 8.1.1.
     """
+    @property
+    def is_idempotent(self) -> builtins.bool:
+        r"""
+        ``True`` when re-sending this operation after an in-doubt attempt
+        leaves the record as one application would. Reads are idempotent;
+        every modify operation of this class is not. See
+        :attr:`Operation.is_idempotent` for the rule.
+        """
     @staticmethod
     def select_by_path(bin_name: builtins.str, flag: builtins.int, ctx: typing.Sequence[_native.CTX]) -> _native.CdtOperation:
         r"""
@@ -2324,6 +2340,14 @@ class ExpOperation:
     Expression operations allow evaluating expressions on the server and optionally storing
     the result in a bin.
     """
+    @property
+    def is_idempotent(self) -> builtins.bool:
+        r"""
+        ``True`` when re-sending this operation after an in-doubt attempt
+        leaves the record as one application would. Reads are idempotent;
+        every modify operation of this class is not. See
+        :attr:`Operation.is_idempotent` for the rule.
+        """
     @staticmethod
     def read(name: builtins.str, exp: _native.FilterExpression, flags: typing.Optional[typing.Any] = None) -> _native.ExpOperation:
         r"""
@@ -4166,6 +4190,14 @@ class HllOperation:
     r"""
     HLL (HyperLogLog) operations. Create HLL operations used by the client's `operate()` method.
     """
+    @property
+    def is_idempotent(self) -> builtins.bool:
+        r"""
+        ``True`` when re-sending this operation after an in-doubt attempt
+        leaves the record as one application would. Reads are idempotent;
+        every modify operation of this class is not. See
+        :attr:`Operation.is_idempotent` for the rule.
+        """
     @staticmethod
     def init(bin_name: builtins.str, index_bit_count: builtins.int, min_hash_bit_count: builtins.int = -1, flags: typing.Optional[typing.Any] = None) -> _native.HllOperation:
         r"""
@@ -4412,6 +4444,14 @@ class ListOperation:
     r"""
     List bin operations. Create list operations used by the client's `operate()` method.
     """
+    @property
+    def is_idempotent(self) -> builtins.bool:
+        r"""
+        ``True`` when re-sending this operation after an in-doubt attempt
+        leaves the record as one application would. Reads are idempotent;
+        every modify operation of this class is not. See
+        :attr:`Operation.is_idempotent` for the rule.
+        """
     @staticmethod
     def get(bin_name: builtins.str, index: builtins.int) -> _native.ListOperation:
         r"""
@@ -4765,6 +4805,14 @@ class MapOperation:
     r"""
     Map bin operations. Create map operations used by the client's `operate()` method.
     """
+    @property
+    def is_idempotent(self) -> builtins.bool:
+        r"""
+        ``True`` when re-sending this operation after an in-doubt attempt
+        leaves the record as one application would. Reads are idempotent;
+        every modify operation of this class is not. See
+        :attr:`Operation.is_idempotent` for the rule.
+        """
     @staticmethod
     def size(bin_name: builtins.str) -> _native.MapOperation:
         r"""
@@ -5280,6 +5328,19 @@ class Operation:
     r"""
     Python wrapper for Operation enum.
     """
+    @property
+    def is_idempotent(self) -> builtins.bool:
+        r"""
+        ``True`` when re-sending this operation after an in-doubt attempt
+        leaves the record as one application would, so a retry is safe.
+
+        Reads, ``put``, ``delete``, and ``touch`` are idempotent. ``add``,
+        ``append``, ``prepend``, and every list, map, bit, HLL, string, and
+        expression modify operation are not, as a family: a few members are
+        idempotent in effect (list ``clear``, HLL ``add``), but retry
+        classification keys on the family. Every operation class carries
+        this property.
+        """
     @property
     def bin_name(self) -> typing.Optional[builtins.str]:
         r"""
@@ -6203,6 +6264,14 @@ class StringOperation:
     trailing ``ctx`` argument selecting a string element nested inside a
     list/map bin. With ``ctx=None`` the op targets the bin itself.
     """
+    @property
+    def is_idempotent(self) -> builtins.bool:
+        r"""
+        ``True`` when re-sending this operation after an in-doubt attempt
+        leaves the record as one application would. Reads and ``to_string``
+        are idempotent; every modify operation is not. See
+        :attr:`Operation.is_idempotent` for the rule.
+        """
     @staticmethod
     def strlen(bin: builtins.str, *, ctx: typing.Optional[typing.Sequence[_native.CTX]] = None) -> _native.StringOperation:
         r"""
