@@ -24,7 +24,7 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_py
 
 use crate::cdt::*;
 use crate::errors::RustClientError;
-use crate::record::PythonValue;
+use crate::record::{PythonValue, Vector};
 use crate::string_ops::StringNumericType;
 
     ////////////////////////////////////////////////////////////////////////////////////////////
@@ -58,6 +58,8 @@ use crate::string_ops::StringNumericType;
         Geo,
         #[pyo3(name = "HLL")]
         HLL,
+        #[pyo3(name = "VECTOR")]
+        Vector,
     }
 
     impl From<&ExpType> for aerospike_core::expressions::ExpType {
@@ -73,7 +75,49 @@ use crate::string_ops::StringNumericType;
                 ExpType::Float => aerospike_core::expressions::ExpType::Float,
                 ExpType::Geo => aerospike_core::expressions::ExpType::Geo,
                 ExpType::HLL => aerospike_core::expressions::ExpType::Hll,
+                ExpType::Vector => aerospike_core::expressions::ExpType::Vector,
             }
+        }
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////
+    //
+    //  VectorDistanceMetric
+    //
+    ////////////////////////////////////////////////////////////////////////////////////////////
+
+    /// Metric of :meth:`FilterExpression.vector_distance`.
+    #[gen_stub_pyclass_enum(module = "_native")]
+    #[pyclass(from_py_object, module = "_native")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum VectorDistanceMetric {
+        /// Squared Euclidean distance. Smaller is closer.
+        #[pyo3(name = "EUCLIDEAN_SQUARED")]
+        EuclideanSquared,
+        /// Dot product. Larger is more similar.
+        #[pyo3(name = "DOT_PRODUCT")]
+        DotProduct,
+        /// Cosine similarity. Larger is more similar.
+        #[pyo3(name = "COSINE_SIMILARITY")]
+        CosineSimilarity,
+    }
+
+    #[pymethods]
+    impl VectorDistanceMetric {
+        fn __richcmp__(&self, other: &VectorDistanceMetric, op: pyo3::class::basic::CompareOp) -> PyResult<bool> {
+            match op {
+                pyo3::class::basic::CompareOp::Eq => Ok(self == other),
+                pyo3::class::basic::CompareOp::Ne => Ok(self != other),
+                _ => Err(pyo3::exceptions::PyNotImplementedError::new_err("Only == and != comparisons are supported")),
+            }
+        }
+
+        fn __hash__(&self) -> u64 {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut hasher = DefaultHasher::new();
+            self.hash(&mut hasher);
+            hasher.finish()
         }
     }
 
@@ -513,6 +557,47 @@ use crate::string_ops::StringNumericType;
         pub fn hll_bin(name: String) -> Self {
             FilterExpression {
                 _as: aerospike_core::expressions::hll_bin(name),
+            }
+        }
+
+        #[staticmethod]
+        /// Create a vector bin expression, the stored side of :meth:`vector_distance`.
+        pub fn vector_bin(name: String) -> Self {
+            FilterExpression {
+                _as: aerospike_core::expressions::vector_bin(name),
+            }
+        }
+
+        #[staticmethod]
+        /// Create an expression that returns, as a float, the distance between
+        /// ``query`` and a stored vector under ``metric``.
+        ///
+        /// ``bin`` is typically :meth:`vector_bin`. A stored value that is not a
+        /// vector, or whose element type or dimension count differs from
+        /// ``query``, evaluates to unknown: the record does not match as a filter,
+        /// and an ``ExpOperation.read`` with ``ExpReadFlags.EVAL_NO_FAIL`` returns
+        /// no value for it. Requires every node to run Aerospike Server 8.2.1 or
+        /// later.
+        ///
+        /// Example::
+        ///
+        ///     close = FilterExpression.lt(
+        ///         FilterExpression.vector_distance(
+        ///             VectorDistanceMetric.EUCLIDEAN_SQUARED,
+        ///             Vector([0.1, 0.9, 0.3]),
+        ///             FilterExpression.vector_bin("embedding"),
+        ///         ),
+        ///         FilterExpression.float_val(0.25),
+        ///     )
+        pub fn vector_distance(metric: VectorDistanceMetric, query: PyRef<'_, Vector>, bin: FilterExpression) -> Self {
+            use aerospike_core::expressions::vector;
+            let build = match metric {
+                VectorDistanceMetric::EuclideanSquared => vector::euclidean_squared_distance,
+                VectorDistanceMetric::DotProduct => vector::dot_product,
+                VectorDistanceMetric::CosineSimilarity => vector::cosine_similarity,
+            };
+            FilterExpression {
+                _as: build(&query.v, bin._as),
             }
         }
 
