@@ -3,6 +3,7 @@
 
 import _native
 import builtins
+import collections.abc
 import enum
 import typing
 __all__ = [
@@ -83,6 +84,9 @@ __all__ = [
     "Node",
     "NodeMetricsSnapshot",
     "Operation",
+    "Order",
+    "OrderBy",
+    "OrderByType",
     "PartitionFilter",
     "PartitionStatus",
     "Privilege",
@@ -123,6 +127,9 @@ __all__ = [
     "UDFLang",
     "UdfRemoveTask",
     "User",
+    "Vector",
+    "VectorDistanceMetric",
+    "VectorElementType",
     "Version",
     "WritePolicy",
     "_LocalClient",
@@ -2615,6 +2622,35 @@ class FilterExpression:
     def hll_bin(name: builtins.str) -> _native.FilterExpression:
         r"""
         Create a HLL bin expression
+        """
+    @staticmethod
+    def vector_bin(name: builtins.str) -> _native.FilterExpression:
+        r"""
+        Create a vector bin expression, the stored side of :meth:`vector_distance`.
+        """
+    @staticmethod
+    def vector_distance(metric: _native.VectorDistanceMetric, query: _native.Vector, bin: _native.FilterExpression) -> _native.FilterExpression:
+        r"""
+        Create an expression that returns, as a float, the distance between
+        ``query`` and a stored vector under ``metric``.
+
+        ``bin`` is typically :meth:`vector_bin`. A stored value that is not a
+        vector, or whose element type or dimension count differs from
+        ``query``, evaluates to unknown: the record does not match as a filter,
+        and an ``ExpOperation.read`` with ``ExpReadFlags.EVAL_NO_FAIL`` returns
+        no value for it. Requires every node to run Aerospike Server 8.2.1 or
+        later.
+
+        Example::
+
+            close = FilterExpression.lt(
+                FilterExpression.vector_distance(
+                    VectorDistanceMetric.EUCLIDEAN_SQUARED,
+                    Vector([0.1, 0.9, 0.3]),
+                    FilterExpression.vector_bin("embedding"),
+                ),
+                FilterExpression.float_val(0.25),
+            )
         """
     @staticmethod
     def bin_exists(name: builtins.str) -> _native.FilterExpression:
@@ -5392,6 +5428,31 @@ class Operation:
         """
 
 @typing.final
+class OrderBy:
+    r"""
+    One Top-K order key of a :class:`Statement`, set with
+    :meth:`Statement.set_order_by` or :meth:`Statement.then_order_by`.
+    """
+    @property
+    def bin_name(self) -> builtins.str:
+        r"""
+        Name of the returned bin the key reads.
+        """
+    @property
+    def data_type(self) -> _native.OrderByType:
+        r"""
+        Declared type of the key.
+        """
+    @property
+    def order(self) -> _native.Order:
+        r"""
+        Sort direction.
+        """
+    def __eq__(self, other: typing.Any) -> builtins.bool: ...
+    def __hash__(self) -> builtins.int: ...
+    def __repr__(self) -> builtins.str: ...
+
+@typing.final
 class PartitionFilter:
     @property
     def begin(self) -> builtins.int: ...
@@ -6219,6 +6280,20 @@ class Statement:
     def set_name(self) -> typing.Optional[builtins.str]: ...
     @set_name.setter
     def set_name(self, value: typing.Optional[builtins.str]) -> None: ...
+    @property
+    def order_by(self) -> builtins.list[_native.OrderBy]:
+        r"""
+        The Top-K order keys, in comparison order; empty for an unranked query.
+        """
+    @property
+    def top_k(self) -> typing.Optional[builtins.int]:
+        r"""
+        The Top-K limit ``k``, in ``[1, 1000]``, or ``None`` for an unranked
+        query. Requires an order key (see :meth:`set_order_by`); the two may be
+        set in either order.
+        """
+    @top_k.setter
+    def top_k(self, value: typing.Optional[builtins.int]) -> None: ...
     def __new__(cls, namespace: builtins.str, set_name: typing.Optional[builtins.str] = None, bins: typing.Optional[typing.Sequence[builtins.str]] = None) -> _native.Statement: ...
     def set_aggregate_function(self, package_name: builtins.str, function_name: builtins.str, function_args: typing.Optional[typing.Sequence[typing.Any]] = None) -> None:
         r"""
@@ -6239,6 +6314,36 @@ class Statement:
         Foreground queries accept only read ops. Server versions before
         8.1.2 only accept the basic ``Read`` op here; 8.1.2+ also accepts
         CDT, expression, bit, and HLL reads.
+        """
+    def set_order_by(self, bin_name: builtins.str, data_type: _native.OrderByType, order: _native.Order) -> None:
+        r"""
+        Sets the order key of a Top-K query, replacing any keys set before.
+
+        A Top-K query returns the ``k`` best records by this key (see
+        :attr:`top_k`), best first. Every node ranks its own records and the
+        client merges them; a record that two nodes both returned keeps its
+        later-updated copy. Ranking runs after the index filter and
+        ``QueryPolicy.filter_expression``, so it changes which matches come
+        back, not which records match.
+
+        ``bin_name`` names a bin of the *returned* record: a stored bin named in
+        ``bins``, or one produced by exactly one :meth:`set_operations` read,
+        such as an ``ExpOperation.read`` of :meth:`FilterExpression.vector_distance`.
+        A record whose key is missing or of another type ranks last in either
+        direction; ties break by digest.
+
+        Checked when the query runs, which raises :class:`ValueError` for a bin
+        name that is empty, longer than 15 UTF-8 bytes or holds a NUL; a key the
+        projection does not return; or an order key without :attr:`top_k`.
+        Top-K requires every node to run Aerospike Server 8.2.1 or later, and
+        cannot be combined with an aggregation, a background query,
+        ``QueryPolicy.max_records`` or a resumed partition filter.
+        """
+    def then_order_by(self, bin_name: builtins.str, data_type: _native.OrderByType, order: _native.Order) -> None:
+        r"""
+        Adds a second order key, compared when the first key ties. It must name
+        a different bin; a Top-K query takes at most two keys. See
+        :meth:`set_order_by`.
         """
 
 class StringOperation:
@@ -6953,6 +7058,85 @@ class User:
         Number of currently open connections for the user
         """
 
+@typing.final
+class Vector:
+    r"""
+    A dense numeric vector, stored in a bin as a ``VECTOR`` value and compared
+    with :meth:`FilterExpression.vector_distance`.
+
+    Build one from a sequence of numbers, with an optional element type
+    (default :attr:`VectorElementType.FLOAT32`), or from a 1-D buffer such as a
+    numpy array, ``array.array`` or ``memoryview``, whose format selects the
+    element type::
+
+        embedding = Vector([0.12, 0.98, -0.34])
+        counts = Vector([3, 0, 7], VectorElementType.INT32)
+        compact = Vector(np.array([0.5, 1.5], dtype=np.float16))
+
+    A vector has at least one element, and every floating-point element is
+    finite: an empty sequence, a NaN or an infinity raises :class:`ValueError`.
+    ``FLOAT16`` elements given as Python floats are rounded to the nearest
+    half-precision value.
+
+    A vector is an immutable, hashable sequence: ``len(v)``, ``v[i]``, slicing
+    and iteration work as they do for a tuple, and two vectors are equal when
+    their element types and elements are equal. It also exposes its elements
+    as a read-only buffer, so ``numpy.asarray(v)`` and ``memoryview(v)`` read
+    them in place without copying.
+
+    Writing a vector, or sending a vector expression, requires every cluster
+    node to run Aerospike Server 8.2.1 or later; otherwise the client refuses
+    the command before sending it. The server stores a vector only as a whole
+    bin value, not nested in a list or map bin.
+    """
+    @property
+    def element_type(self) -> _native.VectorElementType:
+        r"""
+        The element type.
+        """
+    @property
+    def dimensions(self) -> builtins.int:
+        r"""
+        The number of elements.
+        """
+    @property
+    def value(self) -> builtins.list[builtins.int] | builtins.list[builtins.float]:
+        r"""
+        The elements as a new list of ``int`` (``INT32``) or ``float`` values.
+        """
+    def __new__(cls, data: _native.Vector | typing.Sequence[builtins.float] | collections.abc.Buffer, element_type: typing.Optional[_native.VectorElementType] = None) -> _native.Vector: ...
+    @staticmethod
+    def from_wire_bytes(data: builtins.bytes) -> _native.Vector:
+        r"""
+        Decodes a complete vector wire value: a version byte, an element-type
+        byte, the dimension count as a little-endian ``u32``, then the
+        little-endian elements. Use it for a vector carried as ``bytes``, such
+        as one an application stored in a blob bin.
+
+        Example::
+
+            record = await client.get(key, ["embedding_blob"])
+            embedding = Vector.from_wire_bytes(record.bins["embedding_blob"])
+
+        Args:
+            data: The encoded vector.
+
+        Returns:
+            The decoded vector.
+
+        Raises:
+            ValueError: The bytes are not a valid vector wire value.
+        """
+    def __len__(self) -> builtins.int: ...
+    def __getitem__(self, index: typing.Any) -> builtins.int | builtins.float | builtins.list[builtins.int] | builtins.list[builtins.float]: ...
+    def __iter__(self) -> typing.Iterator[builtins.int | builtins.float]: ...
+    def __eq__(self, other: object) -> builtins.bool: ...
+    def __ne__(self, other: object) -> builtins.bool: ...
+    def __hash__(self) -> builtins.int: ...
+    def __repr__(self) -> builtins.str: ...
+    def __buffer__(self, flags: int) -> memoryview: ...
+    def __release_buffer__(self, buffer: memoryview) -> None: ...
+
 class Version:
     @property
     def major(self) -> builtins.int: ...
@@ -6990,6 +7174,16 @@ class Version:
         r"""
         Returns true if server supports two-phase server query selection
         (field ``44`` WHERE explain → execute). Requires server >= 8.2.0.
+        """
+    def supports_vector(self) -> builtins.bool:
+        r"""
+        Returns true if server supports ``VECTOR`` values and vector-distance
+        expressions. Requires server >= 8.2.1.
+        """
+    def supports_query_top_k(self) -> builtins.bool:
+        r"""
+        Returns true if server supports Top-K queries (the order-by and
+        Top-K query fields). Requires server >= 8.2.1.
         """
     def __str__(self) -> builtins.str: ...
     def __repr__(self) -> builtins.str: ...
@@ -7390,6 +7584,7 @@ class ExpType(enum.Enum):
     FLOAT = ...
     GEO = ...
     HLL = ...
+    VECTOR = ...
 
 @typing.final
 class ExpWriteFlags(enum.IntEnum):
@@ -7599,6 +7794,41 @@ class MapWriteMode(enum.Enum):
     r"""
     If the key already exists, the write will fail.
     If the key does not exist, a new item will be created.
+    """
+
+@typing.final
+class Order(enum.Enum):
+    r"""
+    Sort direction of a Top-K order key: which ``k`` records are kept and the
+    order they are returned in.
+    """
+    ASC = ...
+    r"""
+    Smallest values first.
+    """
+    DESC = ...
+    r"""
+    Largest values first.
+    """
+
+@typing.final
+class OrderByType(enum.Enum):
+    r"""
+    Declared type of a Top-K order key, used with :meth:`Statement.set_order_by`.
+
+    A record whose order-key bin is missing or holds another type ranks last.
+    """
+    INTEGER = ...
+    r"""
+    64-bit signed integer.
+    """
+    DOUBLE = ...
+    r"""
+    64-bit float. NaN ranks after every other value; ``-0.0`` equals ``0.0``.
+    """
+    BYTES = ...
+    r"""
+    Bytes, compared as unsigned bytes; a prefix ranks before the longer value.
     """
 
 @typing.final
@@ -7903,6 +8133,46 @@ class UDFLang(enum.Enum):
     LUA = ...
     r"""
     Lua embedded programming language.
+    """
+
+@typing.final
+class VectorDistanceMetric(enum.Enum):
+    r"""
+    Metric of :meth:`FilterExpression.vector_distance`.
+    """
+    EUCLIDEAN_SQUARED = ...
+    r"""
+    Squared Euclidean distance. Smaller is closer.
+    """
+    DOT_PRODUCT = ...
+    r"""
+    Dot product. Larger is more similar.
+    """
+    COSINE_SIMILARITY = ...
+    r"""
+    Cosine similarity. Larger is more similar.
+    """
+
+@typing.final
+class VectorElementType(enum.Enum):
+    r"""
+    Element type of a :class:`Vector`: how each element is stored on the wire.
+    """
+    FLOAT16 = ...
+    r"""
+    IEEE 754 half precision.
+    """
+    INT32 = ...
+    r"""
+    32-bit signed integer.
+    """
+    FLOAT32 = ...
+    r"""
+    32-bit IEEE 754 float.
+    """
+    FLOAT64 = ...
+    r"""
+    64-bit IEEE 754 double.
     """
 
 def geojson(geo_str: builtins.str) -> _native.GeoJSON:

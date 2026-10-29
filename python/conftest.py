@@ -251,6 +251,34 @@ async def supports_query_selection(aerospike_host, use_services_alternate):
     )
 
 
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def supports_vector(aerospike_host, use_services_alternate):
+    """``True`` when every connected node accepts vector values and expressions.
+
+    Probes ``Node.version.supports_vector()`` on all nodes (server >= 8.2.1).
+    The client refuses vector commands to a cluster where any node lacks it.
+    """
+    return await _probe_all_nodes_version_capability(
+        aerospike_host,
+        use_services_alternate,
+        lambda version: version.supports_vector(),
+    )
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def supports_query_top_k(aerospike_host, use_services_alternate):
+    """``True`` when every connected node supports Top-K queries.
+
+    Probes ``Node.version.supports_query_top_k()`` on all nodes (server >= 8.2.1).
+    The client refuses a Top-K query to a cluster where any node lacks it.
+    """
+    return await _probe_all_nodes_version_capability(
+        aerospike_host,
+        use_services_alternate,
+        lambda version: version.supports_query_top_k(),
+    )
+
+
 @pytest.fixture(scope="session")
 def supports_query_selection_sync(aerospike_host, use_services_alternate):
     """Sync session gate for query selection (blocking integration tests)."""
