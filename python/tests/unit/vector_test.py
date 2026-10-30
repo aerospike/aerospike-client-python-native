@@ -113,9 +113,10 @@ class TestVectorBuffer:
         assert v.element_type == element_type
         assert v.value == [1, -2, 3]
 
-    def test_half_precision_memoryview_is_float16(self):
-        data = memoryview(struct.pack("<2e", 0.5, -2.0)).cast("e")
-        assert Vector(data) == Vector([0.5, -2.0], VectorElementType.FLOAT16)
+    def test_half_precision_buffer_is_float16(self):
+        # Python 3.11's memoryview cannot cast to 'e', but it can pass one through.
+        source = Vector([0.5, -2.0], VectorElementType.FLOAT16)
+        assert Vector(memoryview(source)) == source
 
     def test_strided_and_reversed_buffers_read_their_elements(self):
         values = memoryview(array.array("d", range(6)))
@@ -152,7 +153,7 @@ class TestVectorBuffer:
     def test_exports_a_read_only_buffer(self, element_type, fmt):
         view = memoryview(Vector([1, -2], element_type))
         assert (view.format, view.ndim, view.shape, view.readonly) == (fmt, 1, (2,), True)
-        assert view.tolist() == [1, -2]
+        assert view.tobytes() == struct.pack(f"2{fmt}", 1, -2)
 
     @pytest.mark.parametrize("dtype", ["float16", "int32", "float32", "float64"])
     def test_numpy_round_trips_without_copying(self, dtype):
