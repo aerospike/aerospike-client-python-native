@@ -257,7 +257,7 @@ copying. It is stored as a whole bin value, not nested in a list or map.
 
 ```python
 from aerospike_native import (
-    OrderByType, ExpOperation, ExpReadFlags, FilterExpression, Operation, Order,
+    BinDataType, ExpOperation, ExpReadFlags, FilterExpression, Operation, Order,
     PartitionFilter, Statement, Vector, VectorDistanceMetric,
 )
 
@@ -265,7 +265,7 @@ await client.put(key, {"name": "lamp", "embedding": Vector([0.12, 0.98, -0.34])}
 ```
 
 A Top-K query keeps the `k` best records across the whole cluster, ordered by
-up to two keys. Order by a vector distance by computing it in the query's
+up to two integer or double keys. Order by a vector distance by computing it in the query's
 operations and ordering on the computed bin:
 
 ```python
@@ -279,7 +279,7 @@ stmt.set_operations([
     Operation.get_bin("name"),
     ExpOperation.read("similarity", distance, ExpReadFlags.DEFAULT),
 ])
-stmt.set_order_by("similarity", OrderByType.DOUBLE, Order.DESC)
+stmt.set_order_by("similarity", BinDataType.DOUBLE, Order.DESC)
 stmt.top_k = 10
 
 async for record in await client.query(stmt, PartitionFilter.all()):

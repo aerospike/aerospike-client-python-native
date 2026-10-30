@@ -5221,7 +5221,7 @@ fn _native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Filter>()?;
     m.add_class::<Statement>()?;
     m.add_class::<OrderBy>()?;
-    m.add_class::<OrderByType>()?;
+    m.add_class::<BinDataType>()?;
     m.add_class::<Order>()?;
     m.add_class::<ExpType>()?;
     m.add_class::<VectorDistanceMetric>()?;

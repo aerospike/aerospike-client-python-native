@@ -20,7 +20,7 @@ import os
 
 import pytest
 from aerospike_native import (
-    OrderByType,
+    BinDataType,
     ExpOperation,
     ExpReadFlags,
     FilterExpression,
@@ -200,14 +200,14 @@ class TestTopK(TestFixtureCleanDB):
     @pytest.fixture
     async def products(self, client):
         rows = [
-            (1, b"\x09", 40, [0.0, 0.0]),
-            (2, b"\x07\x01", 90, [3.0, 4.0]),
-            (3, b"\x07", 90, [1.0, 1.0]),
-            (4, b"\x05", 70, [0.5, 0.2]),
-            (5, b"\x03", None, [5.0, 5.0]),
+            (1, 9.5, 40, [0.0, 0.0]),
+            (2, 7.25, 90, [3.0, 4.0]),
+            (3, 7.0, 90, [1.0, 1.0]),
+            (4, 5.0, 70, [0.5, 0.2]),
+            (5, 3.0, None, [5.0, 5.0]),
         ]
-        for pid, sku, score, embedding in rows:
-            bins = {"id": pid, "sku": sku, "embedding": Vector(embedding, VectorElementType.FLOAT64)}
+        for pid, price, score, embedding in rows:
+            bins = {"id": pid, "price": price, "embedding": Vector(embedding, VectorElementType.FLOAT64)}
             if score is not None:
                 bins["score"] = score
             await client.put(Key(NAMESPACE, SET, pid), bins)
@@ -215,28 +215,21 @@ class TestTopK(TestFixtureCleanDB):
 
     async def test_highest_scores_first(self, client, products):
         stmt = Statement(NAMESPACE, SET, ["id", "score"])
-        stmt.set_order_by("score", OrderByType.INTEGER, Order.DESC)
+        stmt.set_order_by("score", BinDataType.INTEGER, Order.DESC)
         stmt.top_k = 3
         records = await collect(client, stmt)
         assert [r.bins["score"] for r in records] == [90, 90, 70]
 
     async def test_second_key_breaks_ties(self, client, products):
-        stmt = Statement(NAMESPACE, SET, ["id", "sku", "score"])
-        stmt.set_order_by("score", OrderByType.INTEGER, Order.DESC)
-        # A bytes prefix ranks before the longer value.
-        stmt.then_order_by("sku", OrderByType.BYTES, Order.ASC)
+        stmt = Statement(NAMESPACE, SET, ["id", "price", "score"])
+        stmt.set_order_by("score", BinDataType.INTEGER, Order.DESC)
+        stmt.then_order_by("price", BinDataType.DOUBLE, Order.ASC)
         stmt.top_k = 2
         assert [r.bins["id"] for r in await collect(client, stmt)] == [3, 2]
 
-    async def test_bytes_order_key(self, client, products):
-        stmt = Statement(NAMESPACE, SET, ["id", "sku"])
-        stmt.set_order_by("sku", OrderByType.BYTES, Order.DESC)
-        stmt.top_k = 3
-        assert [r.bins["id"] for r in await collect(client, stmt)] == [1, 2, 3]
-
     async def test_missing_key_ranks_last_and_k_beyond_matches_returns_all(self, client, products):
         stmt = Statement(NAMESPACE, SET, ["id", "score"])
-        stmt.set_order_by("score", OrderByType.INTEGER, Order.ASC)
+        stmt.set_order_by("score", BinDataType.INTEGER, Order.ASC)
         stmt.top_k = 100
         ids = [r.bins["id"] for r in await collect(client, stmt)]
         # Ids 2 and 3 tie on score, and a tie with no second key breaks by digest.
@@ -251,7 +244,7 @@ class TestTopK(TestFixtureCleanDB):
             Operation.get_bin("id"),
             ExpOperation.read("d", distance(VectorDistanceMetric.EUCLIDEAN_SQUARED, query), ExpReadFlags.DEFAULT),
         ])
-        stmt.set_order_by("d", OrderByType.DOUBLE, Order.ASC)
+        stmt.set_order_by("d", BinDataType.DOUBLE, Order.ASC)
         stmt.top_k = 3
         records = await collect(client, stmt)
         assert [r.bins["id"] for r in records] == [1, 4, 3]
@@ -264,13 +257,13 @@ class TestTopK(TestFixtureCleanDB):
             lambda stmt, policy: setattr(stmt, "top_k", 1001),
             lambda stmt, policy: setattr(policy, "max_records", 10),
             lambda stmt, policy: setattr(policy, "include_bin_data", False),
-            lambda stmt, policy: stmt.then_order_by("score", OrderByType.INTEGER, Order.ASC),
+            lambda stmt, policy: stmt.then_order_by("score", BinDataType.INTEGER, Order.ASC),
         ],
         ids=["k-zero", "k-too-large", "max-records", "no-bin-data", "same-bin-twice"],
     )
     async def test_invalid_top_k_is_rejected_before_sending(self, client, configure):
         stmt = Statement(NAMESPACE, SET, ["score"])
-        stmt.set_order_by("score", OrderByType.INTEGER, Order.DESC)
+        stmt.set_order_by("score", BinDataType.INTEGER, Order.DESC)
         stmt.top_k = 5
         policy = QueryPolicy()
         configure(stmt, policy)
@@ -280,7 +273,7 @@ class TestTopK(TestFixtureCleanDB):
 
     async def test_background_query_rejects_top_k(self, client):
         stmt = Statement(NAMESPACE, SET)
-        stmt.set_order_by("score", OrderByType.INTEGER, Order.DESC)
+        stmt.set_order_by("score", BinDataType.INTEGER, Order.DESC)
         stmt.top_k = 5
         with pytest.raises(AerospikeValueError) as exc_info:
             await client.query_operate(stmt, [Operation.put("seen", 1)])
@@ -308,7 +301,7 @@ class TestVectorUnsupportedCluster(TestFixtureCleanDB):
 
     async def test_top_k_query_is_refused(self, client):
         stmt = Statement(NAMESPACE, SET, ["n"])
-        stmt.set_order_by("n", OrderByType.INTEGER, Order.DESC)
+        stmt.set_order_by("n", BinDataType.INTEGER, Order.DESC)
         stmt.top_k = 5
         with pytest.raises(AerospikeValueError, match="Top-K is not supported"):
             await collect(client, stmt)
