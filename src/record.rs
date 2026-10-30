@@ -1421,13 +1421,7 @@ use crate::errors::RustClientError;
         pub fn from_wire_bytes(
             #[gen_stub(override_type(type_repr = "builtins.bytes", imports = ("builtins")))] data: Vec<u8>,
         ) -> PyResult<Self> {
-            // Core reports a malformed vector as a bad server response; these
-            // bytes come from the caller, so the error is the argument's.
-            let v = aerospike_core::Vector::from_wire_bytes(&data).map_err(|e| {
-                RustClientError(aerospike_core::Error::invalid_argument(format!(
-                    "malformed vector wire bytes: {e}"
-                )))
-            })?;
+            let v = aerospike_core::Vector::from_wire_bytes(&data).map_err(RustClientError)?;
             Ok(Vector { v })
         }
 

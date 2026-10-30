@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 pyo3 = { version = "0.29", default-features = false, features = ["indexmap"] }
 pyo3-async-runtimes = { version = "0.29", features = ["tokio-runtime"] }
 tokio = "1.40"
-aerospike-core = { git = "https://github.com/aerospike/aerospike-client-rust", rev = "4e01966", package = "aerospike-core", features = ["rt-tokio", "dynamic-config", "serialization"] }
+aerospike-core = { git = "https://github.com/aerospike/aerospike-client-rust", rev = "56d97e4", package = "aerospike-core", features = ["rt-tokio", "dynamic-config", "serialization"] }
 hex = "0.4"
 # Metrics snapshots re-serialize through core's `serialization` feature; these
 # convert the serde tree into plain Python dicts for `to_dict()`.

@@ -241,8 +241,10 @@ class TestVectorWireBytes:
         ids=["trailing", "truncated", "unknown-version", "zero-dimensions", "unknown-type"],
     )
     def test_malformed_bytes_are_rejected(self, data):
-        with pytest.raises(AerospikeValueError):
+        with pytest.raises(AerospikeValueError) as exc_info:
             Vector.from_wire_bytes(data)
+        assert exc_info.value.result_code == ResultCode.PARAMETER_ERROR
+        assert str(exc_info.value).count("Invalid argument") == 1
 
 
 class TestVectorExpressions:
