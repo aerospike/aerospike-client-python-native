@@ -59,6 +59,21 @@ async def test_all_bins(client_and_key):
     assert rec.generation == 1
     # assert rec.ttl is not None
 
+async def test_bins_agree_in_any_access_order(client_and_key):
+    """``bin()``, ``bins`` and ``repr()`` agree whichever is read first."""
+    client, rp, key = client_and_key
+
+    before = await client.get(key, ["brand", "year"], policy=rp)
+    assert before.bin("brand") == "Ford"
+    assert before.bins == {"brand": "Ford", "year": 1964}
+    assert before.bin("brand") is before.bins["brand"]
+    assert before.bin("model") is None
+
+    after = await client.get(key, ["brand", "year"], policy=rp)
+    assert "'brand': 'Ford'" in repr(after)
+    assert after.bins == {"brand": "Ford", "year": 1964}
+    assert after.bin("year") == 1964
+
 async def test_some_bins(client_and_key):
     """Test getting specific bins from a record."""
 

@@ -492,7 +492,7 @@ impl PyErrArguments for BatchFailedArgs {
                     .records
                     .into_iter()
                     .filter_map(|r| {
-                        Py::new(py, crate::policies::BatchRecord { _as: r })
+                        Py::new(py, crate::policies::BatchRecord::new(r))
                             .ok()
                             .map(pyo3::Py::into_any)
                     })
@@ -558,7 +558,7 @@ impl PyErrArguments for CommitFailedArgs {
                     let rows: Vec<Py<PyAny>> = records
                         .into_iter()
                         .filter_map(|r| {
-                            Py::new(py, crate::policies::BatchRecord { _as: r })
+                            Py::new(py, crate::policies::BatchRecord::new(r))
                                 .ok()
                                 .map(pyo3::Py::into_any)
                         })

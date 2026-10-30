@@ -1210,9 +1210,27 @@ use crate::TlsConfig;
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
-    #[derive(Clone, Debug)]
+    #[derive(Debug)]
     pub struct BatchRecord {
         pub(crate) _as: aerospike_core::BatchRecord,
+        /// The ``record`` object, built on first access. Building it moves the
+        /// record out of ``_as``, so once set it holds the only copy.
+        record: Option<Py<Record>>,
+    }
+
+    impl BatchRecord {
+        pub(crate) fn new(batch_record: aerospike_core::BatchRecord) -> Self {
+            BatchRecord { _as: batch_record, record: None }
+        }
+    }
+
+    impl Clone for BatchRecord {
+        fn clone(&self) -> Self {
+            Python::attach(|py| BatchRecord {
+                _as: self._as.clone(),
+                record: self.record.as_ref().map(|r| r.clone_ref(py)),
+            })
+        }
     }
 
     #[gen_stub_pymethods]
@@ -1230,29 +1248,29 @@ use crate::TlsConfig;
 
         /// Get the record from this batch result.
         ///
-        /// **Performance Note:** This method clones the Record data on each call.
-        /// The amount of data cloned depends on the record size (bins, metadata, etc.).
-        /// For optimal performance when accessing the record multiple times, cache the result in Python:
-        ///
-        /// results = await client.batch_read(bp, brp, keys, None)
-        /// for batch_record in results:
-        ///     record = batch_record.record  # Clone once
-        ///     if record:
-        ///         # Use record multiple times - no additional cloning
-        ///         bins = record.bins
-        ///         key = record.key
-        ///         generation = record.generation
+        /// Every access returns the same ``Record`` object, so its ``bins``
+        /// dict is built once however many times the record is read.
         ///
         /// Returns:
         ///     Optional[Record]: The record if present, None otherwise.
         #[getter]
-        pub fn get_record(&self) -> Option<Record> {
-            self._as.record.as_ref().map(|r| Record { _as: r.clone(), cached_bins: None, cached_results: None })
+        pub fn get_record(&mut self, py: Python<'_>) -> PyResult<Option<Py<Record>>> {
+            if self.record.is_none() {
+                if let Some(record) = self._as.record.take() {
+                    self.record = Some(Py::new(py, Record::from(record))?);
+                }
+            }
+            Ok(self.record.as_ref().map(|r| r.clone_ref(py)))
         }
 
         #[getter]
         pub fn get_result_code(&self) -> Option<ResultCode> {
-            self._as.result_code().map(ResultCode::from)
+            // A row whose record has moved into ``self.record`` is still an
+            // answered row, but core reads its code off ``_as.record``.
+            self._as
+                .result_code()
+                .or_else(|| self.record.as_ref().map(|_| aerospike_core::ResultCode::Ok))
+                .map(ResultCode::from)
         }
 
         #[getter]

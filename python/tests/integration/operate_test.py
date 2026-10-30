@@ -172,6 +172,25 @@ async def test_scalar_multi_op_results_are_op_aligned(client_and_key):
     assert record.bins["n"] == [1, None, 11]
 
 
+async def test_operation_result_reads_the_built_results_list(client_and_key):
+    """``operation_result(i)`` agrees with ``results`` whichever is read first."""
+    client, _ = client_and_key
+    key = Key("test", "test", "operation_result_after_results")
+    await client.delete(key)
+    await client.put(key, {"n": 1})
+    ops = [Operation.get_bin("n"), Operation.add("n", 10), Operation.get_bin("n")]
+
+    before = await client.operate(key, ops)
+    assert before.operation_result(2) == 11
+    assert before.results == [1, None, 11]
+
+    after = await client.operate(key, ops)
+    assert after.results == [11, None, 21]
+    assert after.operation_result(0) is after.results[0]
+    assert after.operation_result(1) is None
+    assert after.operation_result(3) is None
+
+
 async def test_operate_add_and_put(client_and_key):
     """Test operate with Add and Put operations."""
     client, key = client_and_key

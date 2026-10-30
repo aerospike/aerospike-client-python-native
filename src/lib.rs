@@ -892,7 +892,7 @@ use crate::operations::{
                 // free-threaded finalization teardown (see the invariant in
                 // waker.rs and the lazy pattern in errors.rs).
                 match next {
-                    Some(Ok((idx, br))) => Ok((idx, BatchRecord { _as: br })),
+                    Some(Ok((idx, br))) => Ok((idx, BatchRecord::new(br))),
                     Some(Err(e)) => Err(PyErr::from(RustClientError(e))),
                     None => Err(PyStopAsyncIteration::new_err(())),
                 }
@@ -929,7 +929,7 @@ use crate::operations::{
                 })
             })?;
             match next {
-                Some(Ok((idx, br))) => Ok((idx, BatchRecord { _as: br })),
+                Some(Ok((idx, br))) => Ok((idx, BatchRecord::new(br))),
                 Some(Err(e)) => Err(PyErr::from(RustClientError(e))),
                 None => Err(pyo3::exceptions::PyStopIteration::new_err(())),
             }
@@ -2341,7 +2341,7 @@ use crate::operations::{
                 }
                 Ok(batch_ops)
             })?;
-            Ok(raw.into_iter().map(|op| BatchRecord { _as: take_batch_record(op) }).collect())
+            Ok(raw.into_iter().map(|op| BatchRecord::new(take_batch_record(op))).collect())
         }
 
         /// Synchronously write multiple records by key in one batch.
@@ -2381,7 +2381,7 @@ use crate::operations::{
                 }
                 Ok(batch_ops)
             })?;
-            Ok(raw.into_iter().map(|op| BatchRecord { _as: take_batch_record(op) }).collect())
+            Ok(raw.into_iter().map(|op| BatchRecord::new(take_batch_record(op))).collect())
         }
 
         /// Synchronously perform per-key ops on multiple records in one batch.
@@ -2426,7 +2426,7 @@ use crate::operations::{
                 }
                 Ok(batch_ops)
             })?;
-            Ok(raw.into_iter().map(|op| BatchRecord { _as: take_batch_record(op) }).collect())
+            Ok(raw.into_iter().map(|op| BatchRecord::new(take_batch_record(op))).collect())
         }
 
         /// Synchronously delete multiple records by key in one batch.
@@ -2454,7 +2454,7 @@ use crate::operations::{
                 }
                 Ok(batch_ops)
             })?;
-            Ok(raw.into_iter().map(|op| BatchRecord { _as: take_batch_record(op) }).collect())
+            Ok(raw.into_iter().map(|op| BatchRecord::new(take_batch_record(op))).collect())
         }
 
         /// Synchronously check existence of multiple keys in one batch.
@@ -2554,7 +2554,7 @@ use crate::operations::{
                 }
                 Ok(batch_ops)
             })?;
-            Ok(raw.into_iter().map(|op| BatchRecord { _as: take_batch_record(op) }).collect())
+            Ok(raw.into_iter().map(|op| BatchRecord::new(take_batch_record(op))).collect())
         }
 
         /// Synchronously execute a mixed batch of read/write/delete ops.
@@ -2670,7 +2670,7 @@ use crate::operations::{
                 }
                 Ok(batch_ops)
             })?;
-            Ok(raw.into_iter().map(|op| BatchRecord { _as: take_batch_record(op) }).collect())
+            Ok(raw.into_iter().map(|op| BatchRecord::new(take_batch_record(op))).collect())
         }
 
         /// Synchronously execute a streaming batch.
@@ -3352,7 +3352,7 @@ use crate::operations::{
 
                 Ok(results
                     .into_iter()
-                    .map(|op| BatchRecord { _as: take_batch_record(op) })
+                    .map(|op| BatchRecord::new(take_batch_record(op)))
                     .collect::<Vec<BatchRecord>>())
             })
         }
@@ -3401,7 +3401,7 @@ use crate::operations::{
 
                 Ok(results
                     .into_iter()
-                    .map(|op| BatchRecord { _as: take_batch_record(op) })
+                    .map(|op| BatchRecord::new(take_batch_record(op)))
                     .collect::<Vec<BatchRecord>>())
             })
         }
@@ -3456,7 +3456,7 @@ use crate::operations::{
 
                 Ok(results
                     .into_iter()
-                    .map(|op| BatchRecord { _as: take_batch_record(op) })
+                    .map(|op| BatchRecord::new(take_batch_record(op)))
                     .collect::<Vec<BatchRecord>>())
             })
         }
@@ -3493,7 +3493,7 @@ use crate::operations::{
 
                 Ok(results
                     .into_iter()
-                    .map(|op| BatchRecord { _as: take_batch_record(op) })
+                    .map(|op| BatchRecord::new(take_batch_record(op)))
                     .collect::<Vec<BatchRecord>>())
             })
         }
@@ -3620,7 +3620,7 @@ use crate::operations::{
 
                 Ok(results
                     .into_iter()
-                    .map(|op| BatchRecord { _as: take_batch_record(op) })
+                    .map(|op| BatchRecord::new(take_batch_record(op)))
                     .collect::<Vec<BatchRecord>>())
             })
         }
@@ -3753,7 +3753,7 @@ use crate::operations::{
 
                 Ok(results
                     .into_iter()
-                    .map(|op| BatchRecord { _as: take_batch_record(op) })
+                    .map(|op| BatchRecord::new(take_batch_record(op)))
                     .collect::<Vec<BatchRecord>>())
             })
         }

@@ -83,6 +83,19 @@ async def test_batch_read(client_and_keys):
         else:
             assert result.record.bins[bin_name] == i + 1
 
+async def test_batch_record_returns_the_same_record(client_and_keys):
+    """Every read of ``record`` returns one object whose bins are built once."""
+
+    client, keys, _, bin_name = client_and_keys
+
+    results = await client.batch_read(keys[:1], [bin_name], batch_policy=None, read_policy=None)
+
+    br = results[0]
+    assert br.record is br.record
+    assert br.record.bins is br.record.bins
+    assert br.record.bins[bin_name] == "batchvalue1"
+    assert br.result_code == ResultCode.OK
+
 async def test_batch_read_all_bins(client_and_keys):
     """Test batch read with all bins.
 

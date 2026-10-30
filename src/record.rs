@@ -41,50 +41,56 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
     pub struct Record {
         pub(crate) _as: aerospike_core::Record,
-        /// Lazily-cached Python dict for the ``bins`` property.
-        /// Avoids re-cloning and re-converting on every access.
-        pub(crate) cached_bins: Option<Py<PyAny>>,
-        /// Lazily-cached Python list for the ``results`` property.
-        pub(crate) cached_results: Option<Py<PyAny>>,
+        /// The ``bins`` dict, built on first access. Building it moves the
+        /// values out of ``_as.bins``, so once set it holds the only copy.
+        pub(crate) cached_bins: Option<Py<PyDict>>,
+        /// The ``results`` list, built on first access. Building it moves the
+        /// values out of ``_as.results``, so once set it holds the only copy.
+        pub(crate) cached_results: Option<Py<PyList>>,
     }
 
     impl Clone for Record {
         fn clone(&self) -> Self {
-            Record {
+            // A built cache holds the only copy of its values, so the clone
+            // takes a shallow copy of it rather than starting empty.
+            Python::attach(|py| Record {
                 _as: self._as.clone(),
-                // Don't carry caches across clones; the new owner
-                // will lazily rebuild them if needed.
-                cached_bins: None,
-                cached_results: None,
-            }
+                cached_bins: self.cached_bins.as_ref().map(|d| d.bind(py).copy().unwrap().unbind()),
+                cached_results: self
+                    .cached_results
+                    .as_ref()
+                    .map(|l| PyList::new(py, l.bind(py).iter()).unwrap().unbind()),
+            })
         }
     }
 
     #[gen_stub_pymethods]
     #[pymethods]
     impl Record {
-        pub fn bin(&self, name: &str) -> Option<Py<PyAny>> {
-            let b = self._as.bins.get(name);
-            b.map(|v| {
-                let v: PythonValue = v.to_owned().into();
-                Python::attach(|py| v.into_pyobject(py).unwrap().unbind())
-            })
+        pub fn bin(&self, py: Python<'_>, name: &str) -> PyResult<Option<Py<PyAny>>> {
+            if let Some(ref bins) = self.cached_bins {
+                return Ok(bins.bind(py).get_item(name)?.map(Bound::unbind));
+            }
+            let Some(v) = self._as.bins.get(name) else {
+                return Ok(None);
+            };
+            let pv: PythonValue = v.to_owned().into();
+            Ok(Some(pv.into_pyobject(py)?.unbind()))
         }
 
         #[getter]
         pub fn get_bins(&mut self, py: Python<'_>) -> Py<PyAny> {
             if let Some(ref cached) = self.cached_bins {
-                return cached.clone_ref(py);
+                return cached.clone_ref(py).into_any();
             }
             let dict = PyDict::new(py);
-            for (k, v) in &self._as.bins {
-                let pv: PythonValue = v.clone().into();
-                let py_val = pv.into_pyobject(py).unwrap();
-                dict.set_item(k, py_val).unwrap();
+            for (k, v) in std::mem::take(&mut self._as.bins) {
+                let pv: PythonValue = v.into();
+                dict.set_item(k, pv.into_pyobject(py).unwrap()).unwrap();
             }
-            let py_obj: Py<PyAny> = dict.into_any().unbind();
-            self.cached_bins = Some(py_obj.clone_ref(py));
-            py_obj
+            let dict = dict.unbind();
+            self.cached_bins = Some(dict.clone_ref(py));
+            dict.into_any()
         }
 
         /// Positional results, one slot per op in request order.
@@ -99,18 +105,17 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
         #[getter]
         pub fn get_results(&mut self, py: Python<'_>) -> Option<Py<PyAny>> {
             if let Some(ref cached) = self.cached_results {
-                return Some(cached.clone_ref(py));
+                return Some(cached.clone_ref(py).into_any());
             }
-            let results = self._as.results.as_ref()?;
+            let results = self._as.results.take()?;
             let list = PyList::empty(py);
             for v in results {
-                let pv: PythonValue = v.clone().into();
-                let py_val = pv.into_pyobject(py).unwrap();
-                list.append(py_val).unwrap();
+                let pv: PythonValue = v.into();
+                list.append(pv.into_pyobject(py).unwrap()).unwrap();
             }
-            let py_obj: Py<PyAny> = list.into_any().unbind();
-            self.cached_results = Some(py_obj.clone_ref(py));
-            Some(py_obj)
+            let list = list.unbind();
+            self.cached_results = Some(list.clone_ref(py));
+            Some(list.into_any())
         }
 
         /// Return the positional result for the *i*-th op in the request,
@@ -120,11 +125,19 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
         /// out-of-range returns Python ``None`` (matching the in-range
         /// nil-result encoding). Use this when the request size is dynamic
         /// and the caller wants a uniform optional shape.
-        pub fn operation_result(&self, i: usize) -> Option<Py<PyAny>> {
-            self._as.operation_result(i).map(|v| {
-                let pv: PythonValue = v.to_owned().into();
-                Python::attach(|py| pv.into_pyobject(py).unwrap().unbind())
-            })
+        pub fn operation_result(&self, py: Python<'_>, i: usize) -> PyResult<Option<Py<PyAny>>> {
+            if let Some(ref results) = self.cached_results {
+                let results = results.bind(py);
+                if i >= results.len() {
+                    return Ok(None);
+                }
+                return Ok(Some(results.get_item(i)?.unbind()));
+            }
+            let Some(v) = self._as.operation_result(i) else {
+                return Ok(None);
+            };
+            let pv: PythonValue = v.to_owned().into();
+            Ok(Some(pv.into_pyobject(py)?.unbind()))
         }
 
         #[getter]
@@ -142,34 +155,20 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
             self._as.key.as_ref().map(|k| Key { _as: k.clone() })
         }
 
-        fn __str__(&self) -> PyResult<String> {
-            Ok(format!("{}", self))
-        }
-
-        fn __repr__(&self) -> PyResult<String> {
-            let s = self.__str__()?;
-            Ok(format!("Record({})", s))
-        }
-    }
-
-    impl fmt::Display for Record {
-        fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-            write!(f, "generation: {}", self._as.generation)?;
-            write!(f, ", ttl: ")?;
-            let _ = match self._as.time_to_live() {
-                None => "None".fmt(f),
-                Some(duration) => duration.as_secs().fmt(f),
+        fn __str__(&mut self, py: Python<'_>) -> PyResult<String> {
+            let ttl = match self._as.time_to_live() {
+                None => "None".to_string(),
+                Some(duration) => duration.as_secs().to_string(),
             };
-            write!(f, ", key: {:?}", self._as.key)?;
-            write!(f, ", bins: {{")?;
-            for (i, (k, v)) in self._as.bins.iter().enumerate() {
-                if i > 0 {
-                    write!(f, ", ")?;
-                }
-                write!(f, "'{}': {}", k, v)?;
-            }
-            write!(f, "}}")?;
-            Ok(())
+            let bins = self.get_bins(py).bind(py).repr()?.to_string();
+            Ok(format!(
+                "generation: {}, ttl: {}, key: {:?}, bins: {}",
+                self._as.generation, ttl, self._as.key, bins
+            ))
+        }
+
+        fn __repr__(&mut self, py: Python<'_>) -> PyResult<String> {
+            Ok(format!("Record({})", self.__str__(py)?))
         }
     }
 

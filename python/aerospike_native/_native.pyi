@@ -367,18 +367,8 @@ class BatchRecord:
         r"""
         Get the record from this batch result.
 
-        **Performance Note:** This method clones the Record data on each call.
-        The amount of data cloned depends on the record size (bins, metadata, etc.).
-        For optimal performance when accessing the record multiple times, cache the result in Python:
-
-        results = await client.batch_read(bp, brp, keys, None)
-        for batch_record in results:
-            record = batch_record.record  # Clone once
-            if record:
-                # Use record multiple times - no additional cloning
-                bins = record.bins
-                key = record.key
-                generation = record.generation
+        Every access returns the same ``Record`` object, so its ``bins``
+        dict is built once however many times the record is read.
 
         Returns:
             Optional[Record]: The record if present, None otherwise.
