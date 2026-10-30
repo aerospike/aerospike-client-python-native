@@ -22,7 +22,7 @@ import pytest
 
 import aerospike_native
 from aerospike_native import (
-    OrderByType,
+    BinDataType,
     FilterExpression,
     Order,
     ResultCode,
@@ -261,21 +261,22 @@ class TestVectorExpressions:
 
 class TestStatementTopK:
     def test_set_order_by_replaces_and_then_order_by_appends(self):
-        stmt = Statement("test", "products", ["score", "sku"])
-        stmt.set_order_by("score", OrderByType.INTEGER, Order.DESC)
-        stmt.then_order_by("sku", OrderByType.BYTES, Order.ASC)
+        stmt = Statement("test", "products", ["score", "price"])
+        stmt.set_order_by("score", BinDataType.INTEGER, Order.DESC)
+        stmt.then_order_by("price", BinDataType.DOUBLE, Order.ASC)
         first, second = stmt.order_by
-        assert (first.bin_name, first.data_type, first.order) == ("score", OrderByType.INTEGER, Order.DESC)
-        assert (second.bin_name, second.data_type, second.order) == ("sku", OrderByType.BYTES, Order.ASC)
+        assert (first.bin_name, first.data_type, first.order) == ("score", BinDataType.INTEGER, Order.DESC)
+        assert (second.bin_name, second.data_type, second.order) == ("price", BinDataType.DOUBLE, Order.ASC)
 
-        stmt.set_order_by("price", OrderByType.DOUBLE, Order.ASC)
-        assert [key.bin_name for key in stmt.order_by] == ["price"]
+        stmt.set_order_by("rank", BinDataType.INTEGER, Order.ASC)
+        assert [key.bin_name for key in stmt.order_by] == ["rank"]
 
-    def test_order_keys_take_no_string_type_or_flags(self):
-        assert not hasattr(OrderByType, "STRING")
+    def test_order_keys_are_integer_or_double_with_no_flags(self):
+        assert not hasattr(BinDataType, "STRING")
+        assert not hasattr(BinDataType, "BYTES")
         assert not hasattr(aerospike_native, "OrderByFlags")
         with pytest.raises(TypeError):
-            Statement("test", "products").set_order_by("score", OrderByType.INTEGER, Order.ASC, 1)
+            Statement("test", "products").set_order_by("score", BinDataType.INTEGER, Order.ASC, 1)
 
     def test_top_k_defaults_to_none_and_can_be_cleared(self):
         stmt = Statement("test", "products")
@@ -288,9 +289,9 @@ class TestStatementTopK:
 
     def test_order_by_compares_and_prints_by_value(self):
         stmt = Statement("test", "products")
-        stmt.set_order_by("score", OrderByType.BYTES, Order.ASC)
+        stmt.set_order_by("score", BinDataType.DOUBLE, Order.ASC)
         other = Statement("test", "products")
-        other.set_order_by("score", OrderByType.BYTES, Order.ASC)
+        other.set_order_by("score", BinDataType.DOUBLE, Order.ASC)
         assert stmt.order_by == other.order_by
         assert hash(stmt.order_by[0]) == hash(other.order_by[0])
-        assert repr(stmt.order_by[0]) == "OrderBy('score', OrderByType.BYTES, Order.ASC)"
+        assert repr(stmt.order_by[0]) == "OrderBy('score', BinDataType.DOUBLE, Order.ASC)"

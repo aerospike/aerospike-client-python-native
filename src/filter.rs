@@ -28,7 +28,7 @@ use tokio::sync::Mutex;
 
 use aerospike_core::query::RecordStream;
 
-use crate::{OrderByType, CollectionIndexType, Order};
+use crate::{BinDataType, CollectionIndexType, Order};
 use crate::cdt::CTX;
 use crate::errors::RustClientError;
 use crate::expressions::FilterExpression;
@@ -482,14 +482,14 @@ use crate::record::{Key, PythonValue, Record};
         /// Top-K requires every node to run Aerospike Server 8.2.1 or later, and
         /// cannot be combined with an aggregation, a background query,
         /// ``QueryPolicy.max_records`` or a resumed partition filter.
-        pub fn set_order_by(&mut self, bin_name: &str, data_type: OrderByType, order: Order) {
+        pub fn set_order_by(&mut self, bin_name: &str, data_type: BinDataType, order: Order) {
             self._as.set_order_by(bin_name, data_type.into(), order.into());
         }
 
         /// Adds a second order key, compared when the first key ties. It must name
         /// a different bin; a Top-K query takes at most two keys. See
         /// :meth:`set_order_by`.
-        pub fn then_order_by(&mut self, bin_name: &str, data_type: OrderByType, order: Order) {
+        pub fn then_order_by(&mut self, bin_name: &str, data_type: BinDataType, order: Order) {
             self._as.then_order_by(bin_name, data_type.into(), order.into());
         }
 
@@ -539,7 +539,7 @@ use crate::record::{Key, PythonValue, Record};
 
         /// Declared type of the key.
         #[getter]
-        pub fn data_type(&self) -> OrderByType {
+        pub fn data_type(&self) -> BinDataType {
             self._as.order_type.into()
         }
 

@@ -1612,7 +1612,7 @@ pub enum Concurrency {
 
     ////////////////////////////////////////////////////////////////////////////////////////////
     //
-    //  Top-K: OrderByType, Order
+    //  Top-K: BinDataType, Order
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1622,36 +1622,31 @@ pub enum Concurrency {
     #[gen_stub_pyclass_enum(module = "_native")]
     #[pyclass(from_py_object, module = "_native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub enum OrderByType {
+    pub enum BinDataType {
         /// 64-bit signed integer.
         #[pyo3(name = "INTEGER")]
         Integer,
         /// 64-bit float. NaN ranks after every other value; ``-0.0`` equals ``0.0``.
         #[pyo3(name = "DOUBLE")]
         Double,
-        /// Bytes, compared as unsigned bytes; a prefix ranks before the longer value.
-        #[pyo3(name = "BYTES")]
-        Bytes,
     }
 
-    impl From<OrderByType> for aerospike_core::OrderByType {
-        fn from(input: OrderByType) -> Self {
+    impl From<BinDataType> for aerospike_core::OrderByType {
+        fn from(input: BinDataType) -> Self {
             match input {
-                OrderByType::Integer => aerospike_core::OrderByType::Integer,
-                OrderByType::Double => aerospike_core::OrderByType::Double,
-                OrderByType::Bytes => aerospike_core::OrderByType::Bytes,
+                BinDataType::Integer => aerospike_core::OrderByType::Integer,
+                BinDataType::Double => aerospike_core::OrderByType::Double,
             }
         }
     }
 
-    impl From<aerospike_core::OrderByType> for OrderByType {
+    impl From<aerospike_core::OrderByType> for BinDataType {
         fn from(input: aerospike_core::OrderByType) -> Self {
             match input {
-                aerospike_core::OrderByType::Integer => OrderByType::Integer,
-                aerospike_core::OrderByType::Double => OrderByType::Double,
-                aerospike_core::OrderByType::Bytes => OrderByType::Bytes,
-                aerospike_core::OrderByType::String => {
-                    unreachable!("order keys are only set through OrderByType, which has no STRING")
+                aerospike_core::OrderByType::Integer => BinDataType::Integer,
+                aerospike_core::OrderByType::Double => BinDataType::Double,
+                aerospike_core::OrderByType::Bytes | aerospike_core::OrderByType::String => {
+                    unreachable!("order keys are only set through BinDataType, which is INTEGER or DOUBLE")
                 }
             }
         }
@@ -1714,4 +1709,4 @@ pub enum Concurrency {
         )*};
     }
 
-    impl_simple_enum_eq_hash!(OrderByType, Order);
+    impl_simple_enum_eq_hash!(BinDataType, Order);

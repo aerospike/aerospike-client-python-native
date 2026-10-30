@@ -22,6 +22,7 @@ __all__ = [
     "BatchUDFPolicy",
     "BatchWriteOp",
     "BatchWritePolicy",
+    "BinDataType",
     "BitOperation",
     "BitPolicy",
     "BitWriteFlags",
@@ -86,7 +87,6 @@ __all__ = [
     "Operation",
     "Order",
     "OrderBy",
-    "OrderByType",
     "PartitionFilter",
     "PartitionStatus",
     "Privilege",
@@ -5439,7 +5439,7 @@ class OrderBy:
         Name of the returned bin the key reads.
         """
     @property
-    def data_type(self) -> _native.OrderByType:
+    def data_type(self) -> _native.BinDataType:
         r"""
         Declared type of the key.
         """
@@ -6315,7 +6315,7 @@ class Statement:
         8.1.2 only accept the basic ``Read`` op here; 8.1.2+ also accepts
         CDT, expression, bit, and HLL reads.
         """
-    def set_order_by(self, bin_name: builtins.str, data_type: _native.OrderByType, order: _native.Order) -> None:
+    def set_order_by(self, bin_name: builtins.str, data_type: _native.BinDataType, order: _native.Order) -> None:
         r"""
         Sets the order key of a Top-K query, replacing any keys set before.
 
@@ -6339,7 +6339,7 @@ class Statement:
         cannot be combined with an aggregation, a background query,
         ``QueryPolicy.max_records`` or a resumed partition filter.
         """
-    def then_order_by(self, bin_name: builtins.str, data_type: _native.OrderByType, order: _native.Order) -> None:
+    def then_order_by(self, bin_name: builtins.str, data_type: _native.BinDataType, order: _native.Order) -> None:
         r"""
         Adds a second order key, compared when the first key ties. It must name
         a different bin; a Top-K query takes at most two keys. See
@@ -7447,6 +7447,22 @@ class AuthMode(enum.Enum):
     """
 
 @typing.final
+class BinDataType(enum.Enum):
+    r"""
+    Declared type of a Top-K order key, used with :meth:`Statement.set_order_by`.
+
+    A record whose order-key bin is missing or holds another type ranks last.
+    """
+    INTEGER = ...
+    r"""
+    64-bit signed integer.
+    """
+    DOUBLE = ...
+    r"""
+    64-bit float. NaN ranks after every other value; ``-0.0`` equals ``0.0``.
+    """
+
+@typing.final
 class BitWriteFlags(enum.IntEnum):
     DEFAULT: builtins.int
     CREATE_ONLY: builtins.int
@@ -7809,26 +7825,6 @@ class Order(enum.Enum):
     DESC = ...
     r"""
     Largest values first.
-    """
-
-@typing.final
-class OrderByType(enum.Enum):
-    r"""
-    Declared type of a Top-K order key, used with :meth:`Statement.set_order_by`.
-
-    A record whose order-key bin is missing or holds another type ranks last.
-    """
-    INTEGER = ...
-    r"""
-    64-bit signed integer.
-    """
-    DOUBLE = ...
-    r"""
-    64-bit float. NaN ranks after every other value; ``-0.0`` equals ``0.0``.
-    """
-    BYTES = ...
-    r"""
-    Bytes, compared as unsigned bytes; a prefix ranks before the longer value.
     """
 
 @typing.final
