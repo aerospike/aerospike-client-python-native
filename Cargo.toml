@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 pyo3 = { version = "0.29", default-features = false, features = ["indexmap"] }
 pyo3-async-runtimes = { version = "0.29", features = ["tokio-runtime"] }
 tokio = "1.40"
-aerospike-core = { version = "3.0.0", features = ["rt-tokio", "dynamic-config", "serialization"] }
+aerospike-core = { git = "https://github.com/aerospike/aerospike-client-rust", rev = "56d97e4", package = "aerospike-core", features = ["rt-tokio", "dynamic-config", "serialization"] }
 hex = "0.4"
 # Metrics snapshots re-serialize through core's `serialization` feature; these
 # convert the serde tree into plain Python dicts for `to_dict()`.
@@ -24,7 +24,7 @@ parking_lot = "0.12"  # match aerospike-core's PartitionStatus mutex (v3)
 # ordered Python dicts.
 indexmap = "2"
 ordered-float = { version = "3", default-features = false }
-pyo3-stub-gen = "0.23"
+pyo3-stub-gen = { version = "0.23", default-features = false, features = ["infer_signature"] }
 log = "0.4"
 pyo3-log = "0.13"
 futures = "0.3"
@@ -37,6 +37,8 @@ webpki-roots = { version = "1.0", optional = true }
 # exits, and on macOS shares a fixed TLS slot with any other bundled v3.
 mimalloc = { version = "0.1", features = ["v2"] }
 rand = { version = "0.8", features = ["small_rng"] }
+# Converts FLOAT16 vector elements to and from Python floats.
+half = "2"
 
 [build-dependencies]
 # Re-exports pyo3's interpreter cfgs (Py_3_13, Py_GIL_DISABLED, …) via build.rs

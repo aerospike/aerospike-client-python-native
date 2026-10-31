@@ -5212,13 +5212,19 @@ fn _native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Blob>()?;
     m.add_class::<GeoJSON>()?;
     m.add_class::<HLL>()?;
+    m.add_class::<Vector>()?;
+    m.add_class::<VectorElementType>()?;
 
     m.add_class::<Key>()?;
     m.add_class::<Record>()?;
     m.add_class::<Recordset>()?;
     m.add_class::<Filter>()?;
     m.add_class::<Statement>()?;
+    m.add_class::<OrderBy>()?;
+    m.add_class::<BinDataType>()?;
+    m.add_class::<Order>()?;
     m.add_class::<ExpType>()?;
+    m.add_class::<VectorDistanceMetric>()?;
     m.add_class::<FilterExpression>()?;
     m.add_class::<ServerError>()?;
     m.add_class::<Operation>()?;

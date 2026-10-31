@@ -243,6 +243,53 @@ policy = WritePolicy()
 policy.use_compression = True
 ```
 
+## Vectors and Top-K queries
+
+Aerospike 8.2.1+ stores dense numeric vectors as bin values and ranks query
+results server-side. Every cluster node must run 8.2.1 or later; otherwise the
+client refuses the command before sending it.
+
+A `Vector` holds `FLOAT16`, `INT32`, `FLOAT32` (the default), or `FLOAT64`
+elements, built from a sequence or from a 1-D buffer (a numpy array,
+`array.array` or `memoryview`) whose format selects the element type. It is an
+immutable sequence, and `numpy.asarray(vector)` reads its elements without
+copying. It is stored as a whole bin value, not nested in a list or map.
+
+```python
+from aerospike_native import (
+    BinDataType, ExpOperation, ExpReadFlags, FilterExpression, Operation, Order,
+    PartitionFilter, Statement, Vector, VectorDistanceMetric,
+)
+
+await client.put(key, {"name": "lamp", "embedding": Vector([0.12, 0.98, -0.34])})
+```
+
+A Top-K query keeps the `k` best records across the whole cluster, ordered by
+up to two integer, double or bytes keys. Order by a vector distance by computing it in the query's
+operations and ordering on the computed bin:
+
+```python
+query = Vector([0.10, 0.95, -0.30])
+distance = FilterExpression.vector_distance(
+    VectorDistanceMetric.COSINE_SIMILARITY, query, FilterExpression.vector_bin("embedding"),
+)
+
+stmt = Statement("test", "products")
+stmt.set_operations([
+    Operation.get_bin("name"),
+    ExpOperation.read("similarity", distance, ExpReadFlags.DEFAULT),
+])
+stmt.set_order_by("similarity", BinDataType.DOUBLE, Order.DESC)
+stmt.top_k = 10
+
+async for record in await client.query(stmt, PartitionFilter.all()):
+    print(record.bins["name"], record.bins["similarity"])
+```
+
+Records are delivered once every node has answered. Top-K runs only through
+`query` (not background queries), and is incompatible with `max_records`,
+`include_bin_data=False`, and a resumed partition filter.
+
 ## Versioning
 
 The PNC follows [SemVer](https://semver.org/). Pre-releases use the

@@ -15,19 +15,26 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::ffi::{c_int, c_void, CStr};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
 use pyo3::basic::CompareOp;
-use pyo3::exceptions::{PyIndexError, PyValueError};
+use pyo3::buffer::{ElementType, PyUntypedBuffer};
+use pyo3::exceptions::{PyBufferError, PyIndexError, PyValueError};
 use pyo3::exceptions::PyTypeError;
-use pyo3::types::{PyBool, PyByteArray, PyBytes, PyDict, PyList, PySuper, PyTuple};
+use pyo3::ffi;
+use pyo3::types::{
+    PyBool, PyByteArray, PyBytes, PyDict, PyIterator, PyList, PyMemoryView, PySlice, PySliceMethods, PySuper,
+    PyTuple,
+};
 use pyo3::PyTypeInfo;
 use pyo3::{prelude::*, Borrowed, IntoPyObjectExt};
 
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 use pyo3_stub_gen::{PyStubType, TypeInfo};
 
+use aerospike_core::VectorData;
 
 
     /**********************************************************************************
@@ -1073,6 +1080,513 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
 
     ////////////////////////////////////////////////////////////////////////////////////////////
     //
+    //  Vector
+    //
+    ////////////////////////////////////////////////////////////////////////////////////////////
+
+    /// Element type of a :class:`Vector`: how each element is stored on the wire.
+    #[gen_stub_pyclass_enum(module = "_native")]
+    #[pyclass(from_py_object, module = "_native")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum VectorElementType {
+        /// IEEE 754 half precision.
+        #[pyo3(name = "FLOAT16")]
+        Float16,
+        /// 32-bit signed integer.
+        #[pyo3(name = "INT32")]
+        Int32,
+        /// 32-bit IEEE 754 float.
+        #[pyo3(name = "FLOAT32")]
+        Float32,
+        /// 64-bit IEEE 754 double.
+        #[pyo3(name = "FLOAT64")]
+        Float64,
+    }
+
+    #[pymethods]
+    impl VectorElementType {
+        fn __richcmp__(&self, other: &VectorElementType, op: CompareOp) -> PyResult<bool> {
+            match op {
+                CompareOp::Eq => Ok(self == other),
+                CompareOp::Ne => Ok(self != other),
+                _ => Err(pyo3::exceptions::PyNotImplementedError::new_err("Only == and != comparisons are supported")),
+            }
+        }
+
+        fn __hash__(&self) -> u64 {
+            let mut hasher = DefaultHasher::new();
+            self.hash(&mut hasher);
+            hasher.finish()
+        }
+    }
+
+    impl VectorElementType {
+        const fn name(self) -> &'static str {
+            match self {
+                VectorElementType::Float16 => "FLOAT16",
+                VectorElementType::Int32 => "INT32",
+                VectorElementType::Float32 => "FLOAT32",
+                VectorElementType::Float64 => "FLOAT64",
+            }
+        }
+
+        const fn item_size(self) -> usize {
+            match self {
+                VectorElementType::Float16 => 2,
+                VectorElementType::Int32 | VectorElementType::Float32 => 4,
+                VectorElementType::Float64 => 8,
+            }
+        }
+    }
+
+    impl From<aerospike_core::VectorElementType> for VectorElementType {
+        fn from(input: aerospike_core::VectorElementType) -> Self {
+            match input {
+                aerospike_core::VectorElementType::Float16 => VectorElementType::Float16,
+                aerospike_core::VectorElementType::Int32 => VectorElementType::Int32,
+                aerospike_core::VectorElementType::Float32 => VectorElementType::Float32,
+                aerospike_core::VectorElementType::Float64 => VectorElementType::Float64,
+            }
+        }
+    }
+
+    /// Compares elements the way Python compares numbers, so `-0.0 == 0.0`.
+    /// Vectors hold no NaN, which keeps this reflexive.
+    fn vectors_equal(a: &aerospike_core::Vector, b: &aerospike_core::Vector) -> bool {
+        match (a.data(), b.data()) {
+            (VectorData::Float16(x), VectorData::Float16(y)) => {
+                x.len() == y.len() && x.iter().zip(y).all(|(&p, &q)| p == q || (p | q) & F16_MAGNITUDE == 0)
+            }
+            (VectorData::Int32(x), VectorData::Int32(y)) => x == y,
+            (VectorData::Float32(x), VectorData::Float32(y)) => x == y,
+            (VectorData::Float64(x), VectorData::Float64(y)) => x == y,
+            _ => false,
+        }
+    }
+
+    const F16_MAGNITUDE: u16 = 0x7fff;
+
+    /// Hashes a vector consistently with [`vectors_equal`]: both zeros hash as `+0.0`.
+    fn hash_vector<H: Hasher>(v: &aerospike_core::Vector, state: &mut H) {
+        v.element_type().code().hash(state);
+        match v.data() {
+            VectorData::Float16(d) => d
+                .iter()
+                .for_each(|&b| (if b & F16_MAGNITUDE == 0 { 0 } else { b }).hash(state)),
+            VectorData::Int32(d) => d.hash(state),
+            VectorData::Float32(d) => d
+                .iter()
+                .for_each(|&x| (if x == 0.0 { 0 } else { x.to_bits() }).hash(state)),
+            VectorData::Float64(d) => d
+                .iter()
+                .for_each(|&x| (if x == 0.0 { 0 } else { x.to_bits() }).hash(state)),
+        }
+    }
+
+    /// A rejected argument is Python's `ValueError`, as for any constructor:
+    /// the vector never left the process, so there is no result code to carry.
+    fn vector_argument_error(e: aerospike_core::Error) -> PyErr {
+        PyValueError::new_err(e.message().unwrap_or_default().to_owned())
+    }
+
+    /// Rounds each element to the nearest `float16`, refusing a finite value
+    /// that has no finite `float16` form rather than storing an infinity.
+    fn float16_bits(data: Vec<f64>) -> PyResult<Vec<u16>> {
+        data.into_iter()
+            .enumerate()
+            .map(|(i, x)| {
+                let h = half::f16::from_f64(x);
+                if x.is_finite() && !h.is_finite() {
+                    return Err(PyValueError::new_err(format!(
+                        "vector element {i} is out of float16 range: {x}"
+                    )));
+                }
+                Ok(h.to_bits())
+            })
+            .collect()
+    }
+
+    fn vector_from_sequence(
+        data: &Bound<'_, PyAny>,
+        element_type: VectorElementType,
+    ) -> PyResult<aerospike_core::Vector> {
+        let core = match element_type {
+            VectorElementType::Float16 => aerospike_core::Vector::try_float16(float16_bits(data.extract()?)?),
+            VectorElementType::Int32 => aerospike_core::Vector::try_int32(data.extract()?),
+            VectorElementType::Float32 => aerospike_core::Vector::try_float32(data.extract()?),
+            VectorElementType::Float64 => aerospike_core::Vector::try_float64(data.extract()?),
+        };
+        core.map_err(vector_argument_error)
+    }
+
+    fn has_buffer(data: &Bound<'_, PyAny>) -> bool {
+        // SAFETY: `data` is a live object; the call only inspects its type slots.
+        unsafe { ffi::PyObject_CheckBuffer(data.as_ptr()) == 1 }
+    }
+
+    const fn is_native_byte_order(order: u8) -> bool {
+        matches!(order, b'@' | b'=')
+            || if cfg!(target_endian = "little") {
+                order == b'<'
+            } else {
+                matches!(order, b'>' | b'!')
+            }
+    }
+
+    /// The element type a buffer format describes. A byte-swapped format is
+    /// refused: reading it in place would decode every element wrong.
+    fn buffer_element_type(format: &CStr) -> Option<VectorElementType> {
+        let native = match format.to_bytes() {
+            [_] => true,
+            [order, _] => is_native_byte_order(*order),
+            _ => false,
+        };
+        if !native {
+            return None;
+        }
+        match ElementType::from_format(format) {
+            ElementType::Float { bytes: 2 } => Some(VectorElementType::Float16),
+            ElementType::SignedInteger { bytes: 4 } => Some(VectorElementType::Int32),
+            ElementType::Float { bytes: 4 } => Some(VectorElementType::Float32),
+            ElementType::Float { bytes: 8 } => Some(VectorElementType::Float64),
+            _ => None,
+        }
+    }
+
+    /// Copies a 1-D buffer's elements, following its stride.
+    fn buffer_elements<T: Copy>(buf: &PyUntypedBuffer) -> Vec<T> {
+        let count = buf.item_count();
+        let base = buf.buf_ptr().cast::<u8>().cast_const();
+        let stride = buf.strides()[0];
+        let size = std::mem::size_of::<T>();
+        // SAFETY: while `buf` holds the buffer, its exporter guarantees `count`
+        // items of `size` bytes at `base + i * stride`; the caller checked the
+        // item size, and unaligned reads place no alignment demand on `base`.
+        unsafe {
+            if stride == size as isize {
+                let mut out = Vec::<T>::with_capacity(count);
+                std::ptr::copy_nonoverlapping(base, out.as_mut_ptr().cast::<u8>(), count * size);
+                out.set_len(count);
+                out
+            } else {
+                (0..count)
+                    .map(|i| base.offset(i as isize * stride).cast::<T>().read_unaligned())
+                    .collect()
+            }
+        }
+    }
+
+    /// Builds a vector from a 1-D buffer such as a numpy array, ``array.array``
+    /// or ``memoryview``. The buffer's format selects the element type.
+    fn vector_from_buffer(
+        data: &Bound<'_, PyAny>,
+        element_type: Option<VectorElementType>,
+    ) -> PyResult<aerospike_core::Vector> {
+        // PyO3 refuses an exporter that leaves `strides` null, which the buffer
+        // protocol allows for contiguous data (ctypes arrays do it); a memoryview
+        // re-exports the same memory with strides filled in.
+        let buf = PyUntypedBuffer::get(data)
+            .or_else(|_| PyUntypedBuffer::get(PyMemoryView::from(data)?.as_any()))?;
+        if buf.dimensions() != 1 {
+            return Err(PyValueError::new_err(format!(
+                "Vector requires a 1-D buffer, got {}-D",
+                buf.dimensions()
+            )));
+        }
+        if buf.suboffsets().is_some_and(|s| s[0] >= 0) {
+            return Err(PyTypeError::new_err("Vector does not read indirect (suboffset) buffers"));
+        }
+        let format = buf.format();
+        let detected = buffer_element_type(format)
+            .filter(|t| t.item_size() == buf.item_size())
+            .ok_or_else(|| {
+                PyTypeError::new_err(format!(
+                    "unsupported buffer format '{}' for Vector; use float16, int32, float32 or \
+                     float64 in native byte order",
+                    format.to_string_lossy()
+                ))
+            })?;
+        if let Some(requested) = element_type {
+            if requested != detected {
+                return Err(PyTypeError::new_err(format!(
+                    "element_type {} does not match buffer format '{}'",
+                    requested.name(),
+                    format.to_string_lossy()
+                )));
+            }
+        }
+
+        let core = match detected {
+            VectorElementType::Float16 => aerospike_core::Vector::try_float16(buffer_elements(&buf)),
+            VectorElementType::Int32 => aerospike_core::Vector::try_int32(buffer_elements(&buf)),
+            VectorElementType::Float32 => aerospike_core::Vector::try_float32(buffer_elements(&buf)),
+            VectorElementType::Float64 => aerospike_core::Vector::try_float64(buffer_elements(&buf)),
+        };
+        core.map_err(vector_argument_error)
+    }
+
+    /// A dense numeric vector, stored in a bin as a ``VECTOR`` value and compared
+    /// with :meth:`FilterExpression.vector_distance`.
+    ///
+    /// Build one from a sequence of numbers, with an optional element type
+    /// (default :attr:`VectorElementType.FLOAT32`), or from a 1-D buffer such as a
+    /// numpy array, ``array.array`` or ``memoryview``, whose format selects the
+    /// element type::
+    ///
+    ///     embedding = Vector([0.12, 0.98, -0.34])
+    ///     counts = Vector([3, 0, 7], VectorElementType.INT32)
+    ///     compact = Vector(np.array([0.5, 1.5], dtype=np.float16))
+    ///
+    /// A vector has at least one element, and every floating-point element is
+    /// finite: an empty sequence, a NaN or an infinity raises :class:`ValueError`.
+    /// ``FLOAT16`` elements given as Python floats are rounded to the nearest
+    /// half-precision value.
+    ///
+    /// A vector is an immutable, hashable sequence: ``len(v)``, ``v[i]``, slicing
+    /// and iteration work as they do for a tuple, and two vectors are equal when
+    /// their element types and elements are equal. It also exposes its elements
+    /// as a read-only buffer, so ``numpy.asarray(v)`` and ``memoryview(v)`` read
+    /// them in place without copying.
+    ///
+    /// Writing a vector, or sending a vector expression, requires every cluster
+    /// node to run Aerospike Server 8.2.1 or later; otherwise the client refuses
+    /// the command before sending it. The server stores a vector only as a whole
+    /// bin value, not nested in a list or map bin.
+    #[gen_stub_pyclass(module = "_native")]
+    #[pyclass(from_py_object, frozen, sequence, module = "_native")]
+    #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
+    #[derive(Debug, Clone)]
+    pub struct Vector {
+        pub(crate) v: aerospike_core::Vector,
+    }
+
+    impl Vector {
+        fn element<'py>(&self, py: Python<'py>, index: usize) -> PyResult<Bound<'py, PyAny>> {
+            match self.v.data() {
+                VectorData::Float16(d) => half::f16::from_bits(d[index]).to_f64().into_bound_py_any(py),
+                VectorData::Int32(d) => d[index].into_bound_py_any(py),
+                VectorData::Float32(d) => d[index].into_bound_py_any(py),
+                VectorData::Float64(d) => d[index].into_bound_py_any(py),
+            }
+        }
+    }
+
+    #[gen_stub_pymethods]
+    #[pymethods]
+    impl Vector {
+        #[new]
+        #[pyo3(signature = (data, element_type = None))]
+        pub fn new(
+            #[gen_stub(override_type(
+                type_repr = "_native.Vector | typing.Sequence[builtins.float] | collections.abc.Buffer",
+                imports = ("typing", "builtins", "collections.abc")
+            ))]
+            data: &Bound<'_, PyAny>,
+            element_type: Option<VectorElementType>,
+        ) -> PyResult<Self> {
+            if let Ok(existing) = data.cast::<Vector>() {
+                let existing = existing.get();
+                if element_type.is_some_and(|t| t != existing.v.element_type().into()) {
+                    return Err(PyTypeError::new_err(
+                        "element_type does not match the Vector's element type",
+                    ));
+                }
+                return Ok(existing.clone());
+            }
+            // Lists and tuples are the common input and never export a buffer.
+            if !data.is_instance_of::<PyList>() && !data.is_instance_of::<PyTuple>() && has_buffer(data) {
+                return Ok(Vector { v: vector_from_buffer(data, element_type)? });
+            }
+            let v = vector_from_sequence(data, element_type.unwrap_or(VectorElementType::Float32))?;
+            Ok(Vector { v })
+        }
+
+        /// Decodes a complete vector wire value: a version byte, an element-type
+        /// byte, the dimension count as a little-endian ``u32``, then the
+        /// little-endian elements. Use it for a vector carried as ``bytes``, such
+        /// as one an application stored in a blob bin.
+        ///
+        /// Example::
+        ///
+        ///     record = await client.get(key, ["embedding_blob"])
+        ///     embedding = Vector.from_wire_bytes(record.bins["embedding_blob"])
+        ///
+        /// Args:
+        ///     data: The encoded vector.
+        ///
+        /// Returns:
+        ///     The decoded vector.
+        ///
+        /// Raises:
+        ///     ValueError: The bytes are not a valid vector wire value.
+        #[staticmethod]
+        pub fn from_wire_bytes(
+            #[gen_stub(override_type(type_repr = "builtins.bytes", imports = ("builtins")))] data: Vec<u8>,
+        ) -> PyResult<Self> {
+            let v = aerospike_core::Vector::from_wire_bytes(&data).map_err(vector_argument_error)?;
+            Ok(Vector { v })
+        }
+
+        /// The element type.
+        #[getter]
+        pub fn element_type(&self) -> VectorElementType {
+            self.v.element_type().into()
+        }
+
+        /// The number of elements.
+        #[getter]
+        pub fn dimensions(&self) -> usize {
+            self.v.dimensions()
+        }
+
+        /// The elements as a new list of ``int`` (``INT32``) or ``float`` values.
+        #[gen_stub(override_return_type(
+            type_repr = "builtins.list[builtins.int] | builtins.list[builtins.float]",
+            imports = ("builtins")
+        ))]
+        #[getter]
+        pub fn value<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+            match self.v.data() {
+                VectorData::Float16(d) => d
+                    .iter()
+                    .map(|&bits| half::f16::from_bits(bits).to_f64())
+                    .collect::<Vec<f64>>()
+                    .into_bound_py_any(py),
+                VectorData::Int32(d) => d.into_bound_py_any(py),
+                VectorData::Float32(d) => d.into_bound_py_any(py),
+                VectorData::Float64(d) => d.into_bound_py_any(py),
+            }
+        }
+
+        fn __len__(&self) -> usize {
+            self.v.dimensions()
+        }
+
+        #[gen_stub(override_return_type(
+            type_repr = "builtins.int | builtins.float | builtins.list[builtins.int] | builtins.list[builtins.float]",
+            imports = ("builtins")
+        ))]
+        fn __getitem__<'py>(&self, py: Python<'py>, index: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+            let len = self.v.dimensions() as isize;
+            if let Ok(slice) = index.cast::<PySlice>() {
+                let bounds = slice.indices(len)?;
+                let elements = (0..bounds.slicelength as isize)
+                    .map(|i| self.element(py, (bounds.start + i * bounds.step) as usize))
+                    .collect::<PyResult<Vec<_>>>()?;
+                return PyList::new(py, elements).map(Bound::into_any);
+            }
+            let i: isize = index.extract()?;
+            let position = if i < 0 { i + len } else { i };
+            if !(0..len).contains(&position) {
+                return Err(PyIndexError::new_err("Vector index out of range"));
+            }
+            self.element(py, position as usize)
+        }
+
+        #[gen_stub(override_return_type(
+            type_repr = "typing.Iterator[builtins.int | builtins.float]",
+            imports = ("typing", "builtins")
+        ))]
+        fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyIterator>> {
+            self.value(py)?.try_iter()
+        }
+
+        /// Exposes the elements as a read-only buffer in native byte order, so
+        /// ``memoryview(v)`` and ``numpy.asarray(v)`` read them without copying.
+        #[gen_stub(skip)]
+        unsafe fn __getbuffer__(slf: Bound<'_, Self>, view: *mut ffi::Py_buffer, flags: c_int) -> PyResult<()> {
+            if view.is_null() {
+                return Err(PyBufferError::new_err("buffer view is null"));
+            }
+            if flags & ffi::PyBUF_WRITABLE == ffi::PyBUF_WRITABLE {
+                return Err(PyBufferError::new_err("Vector is read-only"));
+            }
+            let v = &slf.get().v;
+            let (data, item_size, format): (*const c_void, usize, &'static CStr) = match v.data() {
+                VectorData::Float16(d) => (d.as_ptr().cast(), 2, c"e"),
+                VectorData::Int32(d) => (d.as_ptr().cast(), 4, c"i"),
+                VectorData::Float32(d) => (d.as_ptr().cast(), 4, c"f"),
+                VectorData::Float64(d) => (d.as_ptr().cast(), 8, c"d"),
+            };
+            let count = v.dimensions();
+            // SAFETY: `view` is non-null and owned by the caller. The elements stay
+            // valid and unchanged for the view's lifetime: the Vector is immutable
+            // and `obj` keeps it alive. The shape box is freed in `__releasebuffer__`.
+            unsafe {
+                let shape = Box::into_raw(Box::new(count as ffi::Py_ssize_t));
+                (*view).buf = data.cast_mut();
+                (*view).len = (count * item_size) as ffi::Py_ssize_t;
+                (*view).readonly = 1;
+                (*view).itemsize = item_size as ffi::Py_ssize_t;
+                (*view).format = if flags & ffi::PyBUF_FORMAT == ffi::PyBUF_FORMAT {
+                    format.as_ptr().cast_mut()
+                } else {
+                    std::ptr::null_mut()
+                };
+                (*view).ndim = 1;
+                (*view).shape = if flags & ffi::PyBUF_ND == ffi::PyBUF_ND { shape } else { std::ptr::null_mut() };
+                (*view).strides = if flags & ffi::PyBUF_STRIDES == ffi::PyBUF_STRIDES {
+                    &mut (*view).itemsize
+                } else {
+                    std::ptr::null_mut()
+                };
+                (*view).suboffsets = std::ptr::null_mut();
+                (*view).internal = shape.cast();
+                (*view).obj = slf.into_any().into_ptr();
+            }
+            Ok(())
+        }
+
+        #[gen_stub(skip)]
+        unsafe fn __releasebuffer__(&self, view: *mut ffi::Py_buffer) {
+            // SAFETY: `internal` holds the shape box `__getbuffer__` allocated for this view.
+            drop(unsafe { Box::from_raw((*view).internal.cast::<ffi::Py_ssize_t>()) });
+        }
+
+        fn __richcmp__(&self, other: &Bound<'_, PyAny>, op: CompareOp) -> bool {
+            let equal = other.cast::<Vector>().is_ok_and(|other| vectors_equal(&self.v, &other.get().v));
+            match op {
+                CompareOp::Eq => equal,
+                CompareOp::Ne => !equal,
+                _ => false,
+            }
+        }
+
+        fn __hash__(&self) -> u64 {
+            let mut hasher = DefaultHasher::new();
+            hash_vector(&self.v, &mut hasher);
+            hasher.finish()
+        }
+
+        fn __repr__(&self) -> String {
+            let elements = match self.v.data() {
+                VectorData::Float16(d) => format!(
+                    "{:?}",
+                    d.iter().map(|&b| half::f16::from_bits(b).to_f64()).collect::<Vec<_>>()
+                ),
+                VectorData::Int32(d) => format!("{d:?}"),
+                VectorData::Float32(d) => format!("{d:?}"),
+                VectorData::Float64(d) => format!("{d:?}"),
+            };
+            let element_type: VectorElementType = self.v.element_type().into();
+            format!("Vector({elements}, VectorElementType.{})", element_type.name())
+        }
+    }
+
+    // The buffer slots take raw `Py_buffer` pointers, which the stub generator
+    // cannot type; these are the Python-level methods CPython derives from them.
+    pyo3_stub_gen::inventory::submit! {
+        pyo3_stub_gen::derive::gen_methods_from_python! {
+            r#"
+            class Vector:
+                def __buffer__(self, flags: int) -> memoryview: ...
+                def __release_buffer__(self, buffer: memoryview) -> None: ...
+            "#
+        }
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////
+    //
     //  SpecialValue (CDT range / value boundaries)
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
@@ -1161,6 +1675,9 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
         /// HLL value
         HLL(Vec<u8>),
 
+        /// Dense numeric vector (see :class:`Vector`).
+        Vector(aerospike_core::Vector),
+
         /// CDT boundary markers (see :class:`SpecialValue`).
         CdtSpecial(SpecialValue),
     }
@@ -1179,6 +1696,7 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
                 PythonValue::String(ref val) | PythonValue::GeoJSON(ref val) => val.hash(state),
                 PythonValue::Blob(ref val) | PythonValue::HLL(ref val) => val.hash(state),
                 PythonValue::List(ref val) => val.hash(state),
+                PythonValue::Vector(ref val) => hash_vector(val, state),
                 PythonValue::HashMap(_)
                 | PythonValue::OrderedMap(_)
                 | PythonValue::SortedMap(_) => {
@@ -1201,6 +1719,7 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
                 PythonValue::GeoJSON(ref val) => format!("GeoJSON('{}')", val),
                 PythonValue::Blob(ref val) => format!("{:?}", val),
                 PythonValue::HLL(ref val) => format!("HLL('{:?}')", val),
+                PythonValue::Vector(ref val) => val.to_string(),
                 PythonValue::List(ref val) => format!("{:?}", val),
                 PythonValue::HashMap(ref val) => format!("{:?}", val),
                 PythonValue::SortedMap(ref val) => format!("{:?}", val),
@@ -1277,6 +1796,7 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
                     Ok(geo.into_pyobject(py).map(|v| v.into_any()).unwrap())
                 }
                 PythonValue::HLL(b) => Ok(HLL::new(b).into_pyobject(py).map(|v| v.into_any()).unwrap()),
+                PythonValue::Vector(v) => Ok(Vector { v }.into_pyobject(py).map(|v| v.into_any()).unwrap()),
                 PythonValue::CdtSpecial(s) => {
                     Ok(s.into_pyobject(py).map(|v| v.into_any()).unwrap())
                 }
@@ -1291,6 +1811,12 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
             // Handle None first - check if the object is None
             if obj.is_none() {
                 return Ok(PythonValue::Nil);
+            }
+
+            // Ahead of the sequence extraction below, which would otherwise read a
+            // Vector as a list of numbers.
+            if let Ok(vector) = obj.cast::<Vector>() {
+                return Ok(PythonValue::Vector(vector.get().v.clone()));
             }
 
             if let Ok(sv) = <SpecialValue as FromPyObject>::extract(obj) {
@@ -1440,6 +1966,7 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
                 }
                 PythonValue::GeoJSON(gj) => aerospike_core::Value::GeoJson(gj),
                 PythonValue::HLL(b) => aerospike_core::Value::Hll(b),
+                PythonValue::Vector(v) => aerospike_core::Value::Vector(v),
                 PythonValue::CdtSpecial(s) => match s {
                     SpecialValue::Null => aerospike_core::Value::Nil,
                     SpecialValue::Infinity => aerospike_core::Value::Infinity,
@@ -1504,6 +2031,7 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
                 }
                 aerospike_core::Value::GeoJson(gj) => PythonValue::GeoJSON(gj),
                 aerospike_core::Value::Hll(b) => PythonValue::HLL(b),
+                aerospike_core::Value::Vector(v) => PythonValue::Vector(v),
                 aerospike_core::Value::Infinity => PythonValue::CdtSpecial(SpecialValue::Infinity),
                 aerospike_core::Value::Wildcard => PythonValue::CdtSpecial(SpecialValue::Wildcard),
                 aerospike_core::Value::KeyValueList(kvl) => {
