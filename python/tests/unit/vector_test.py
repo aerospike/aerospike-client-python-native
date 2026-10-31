@@ -25,13 +25,11 @@ from aerospike_native import (
     BinDataType,
     FilterExpression,
     Order,
-    ResultCode,
     Statement,
     Vector,
     VectorDistanceMetric,
     VectorElementType,
 )
-from aerospike_native.exceptions import ValueError as AerospikeValueError
 
 NON_NATIVE_FLOAT = ctypes.c_float.__ctype_be__ if sys.byteorder == "little" else ctypes.c_float.__ctype_le__
 
@@ -81,17 +79,16 @@ class TestVectorConstruction:
             ([float("-inf")], VectorElementType.FLOAT16),
         ],
     )
-    def test_empty_and_non_finite_are_parameter_errors(self, values, element_type):
-        with pytest.raises(AerospikeValueError) as exc_info:
+    def test_empty_and_non_finite_are_value_errors(self, values, element_type):
+        with pytest.raises(ValueError):
             Vector(values, element_type)
-        assert exc_info.value.result_code == ResultCode.PARAMETER_ERROR
 
     def test_float16_out_of_range_is_rejected(self):
-        with pytest.raises(AerospikeValueError, match="out of float16 range"):
+        with pytest.raises(ValueError, match="out of float16 range"):
             Vector([1.0, 70000.0], VectorElementType.FLOAT16)
 
     def test_oversized_vector_is_rejected(self):
-        with pytest.raises(AerospikeValueError, match="exceeds max"):
+        with pytest.raises(ValueError, match="exceeds max"):
             Vector([0.0] * 32769, VectorElementType.FLOAT64)
 
     def test_int32_overflow_and_non_numbers_are_rejected(self):
@@ -128,7 +125,7 @@ class TestVectorBuffer:
         assert Vector(native) == Vector([1.5, -2.5])
 
     def test_invalid_buffers_are_rejected(self):
-        with pytest.raises(AerospikeValueError, match="1-D"):
+        with pytest.raises(ValueError, match="1-D"):
             Vector(memoryview(array.array("f", [0.0] * 4)).cast("B").cast("f", [2, 2]))
         with pytest.raises(TypeError, match="native byte order"):
             Vector((NON_NATIVE_FLOAT * 2)(1.0, 2.0))
@@ -138,7 +135,7 @@ class TestVectorBuffer:
             Vector(b"\x00\x00\x80\x3f")
         with pytest.raises(TypeError, match="does not match"):
             Vector(array.array("f", [1.0]), VectorElementType.FLOAT64)
-        with pytest.raises(AerospikeValueError):
+        with pytest.raises(ValueError):
             Vector(array.array("f", [float("nan")]))
 
     @pytest.mark.parametrize(
@@ -230,21 +227,21 @@ class TestVectorWireBytes:
         assert Vector.from_wire_bytes(wire_bytes(type_code, fmt, values)) == Vector(values, element_type)
 
     @pytest.mark.parametrize(
-        "data",
+        "data, reason",
         [
-            wire_bytes(0x03, "f", [1.0]) + b"\x00",
-            wire_bytes(0x03, "f", [1.0])[:-1],
-            wire_bytes(0x03, "f", [1.0], version=2),
-            wire_bytes(0x03, "f", []),
-            wire_bytes(0x09, "f", [1.0]),
+            (wire_bytes(0x03, "f", [1.0]) + b"\x00", "invalid vector length: 11"),
+            (wire_bytes(0x03, "f", [1.0])[:-1], "invalid vector length: 9"),
+            (wire_bytes(0x03, "f", [1.0], version=2), "unsupported vector format version 2"),
+            (wire_bytes(0x03, "f", []), "at least 1 dimension"),
+            (wire_bytes(0x09, "f", [1.0]), "unknown vector element type code: 9"),
         ],
         ids=["trailing", "truncated", "unknown-version", "zero-dimensions", "unknown-type"],
     )
-    def test_malformed_bytes_are_rejected(self, data):
-        with pytest.raises(AerospikeValueError) as exc_info:
+    def test_malformed_bytes_are_rejected(self, data, reason):
+        with pytest.raises(ValueError, match=reason) as exc_info:
             Vector.from_wire_bytes(data)
-        assert exc_info.value.result_code == ResultCode.PARAMETER_ERROR
-        assert str(exc_info.value).count("Invalid argument") == 1
+        # The bare reason, without the result-code decoration a command error carries.
+        assert "Invalid argument" not in str(exc_info.value)
 
 
 class TestVectorExpressions:

@@ -36,8 +36,6 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
 
 use aerospike_core::VectorData;
 
-use crate::errors::RustClientError;
-
 
     /**********************************************************************************
      *
@@ -1185,6 +1183,12 @@ use crate::errors::RustClientError;
         }
     }
 
+    /// A rejected argument is Python's `ValueError`, as for any constructor:
+    /// the vector never left the process, so there is no result code to carry.
+    fn vector_argument_error(e: aerospike_core::Error) -> PyErr {
+        PyValueError::new_err(e.message().unwrap_or_default().to_owned())
+    }
+
     /// Rounds each element to the nearest `float16`, refusing a finite value
     /// that has no finite `float16` form rather than storing an infinity.
     fn float16_bits(data: Vec<f64>) -> PyResult<Vec<u16>> {
@@ -1193,10 +1197,9 @@ use crate::errors::RustClientError;
             .map(|(i, x)| {
                 let h = half::f16::from_f64(x);
                 if x.is_finite() && !h.is_finite() {
-                    return Err(RustClientError(aerospike_core::Error::invalid_argument(format!(
+                    return Err(PyValueError::new_err(format!(
                         "vector element {i} is out of float16 range: {x}"
-                    )))
-                    .into());
+                    )));
                 }
                 Ok(h.to_bits())
             })
@@ -1213,7 +1216,7 @@ use crate::errors::RustClientError;
             VectorElementType::Float32 => aerospike_core::Vector::try_float32(data.extract()?),
             VectorElementType::Float64 => aerospike_core::Vector::try_float64(data.extract()?),
         };
-        Ok(core.map_err(RustClientError)?)
+        core.map_err(vector_argument_error)
     }
 
     fn has_buffer(data: &Bound<'_, PyAny>) -> bool {
@@ -1285,11 +1288,10 @@ use crate::errors::RustClientError;
         let buf = PyUntypedBuffer::get(data)
             .or_else(|_| PyUntypedBuffer::get(PyMemoryView::from(data)?.as_any()))?;
         if buf.dimensions() != 1 {
-            return Err(RustClientError(aerospike_core::Error::invalid_argument(format!(
+            return Err(PyValueError::new_err(format!(
                 "Vector requires a 1-D buffer, got {}-D",
                 buf.dimensions()
-            )))
-            .into());
+            )));
         }
         if buf.suboffsets().is_some_and(|s| s[0] >= 0) {
             return Err(PyTypeError::new_err("Vector does not read indirect (suboffset) buffers"));
@@ -1320,7 +1322,7 @@ use crate::errors::RustClientError;
             VectorElementType::Float32 => aerospike_core::Vector::try_float32(buffer_elements(&buf)),
             VectorElementType::Float64 => aerospike_core::Vector::try_float64(buffer_elements(&buf)),
         };
-        Ok(core.map_err(RustClientError)?)
+        core.map_err(vector_argument_error)
     }
 
     /// A dense numeric vector, stored in a bin as a ``VECTOR`` value and compared
@@ -1421,7 +1423,7 @@ use crate::errors::RustClientError;
         pub fn from_wire_bytes(
             #[gen_stub(override_type(type_repr = "builtins.bytes", imports = ("builtins")))] data: Vec<u8>,
         ) -> PyResult<Self> {
-            let v = aerospike_core::Vector::from_wire_bytes(&data).map_err(RustClientError)?;
+            let v = aerospike_core::Vector::from_wire_bytes(&data).map_err(vector_argument_error)?;
             Ok(Vector { v })
         }
 
