@@ -99,11 +99,11 @@ jobs:
             python: "3.14t"
             wheel-glob: "*cp314-cp314t-manylinux*x86_64*.whl"
           - name: macos-arm64-py314
-            runs-on: macos-14
+            runs-on: macos-latest
             python: "3.14"
             wheel-glob: "*cp314-cp314-macosx*arm64*.whl"
           - name: macos-arm64-py314t
-            runs-on: macos-14
+            runs-on: macos-latest
             python: "3.14t"
             wheel-glob: "*cp314-cp314t-macosx*arm64*.whl"
           - name: linux-x86_64-py315
@@ -115,11 +115,11 @@ jobs:
             python: "3.15t"
             wheel-glob: "*cp315-cp315t-manylinux*x86_64*.whl"
           - name: macos-arm64-py315
-            runs-on: macos-14
+            runs-on: macos-latest
             python: "3.15"
             wheel-glob: "*cp315-cp315-macosx*arm64*.whl"
           - name: macos-arm64-py315t
-            runs-on: macos-14
+            runs-on: macos-latest
             python: "3.15t"
             wheel-glob: "*cp315-cp315t-macosx*arm64*.whl"
     steps:
