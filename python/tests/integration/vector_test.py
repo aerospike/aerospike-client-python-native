@@ -200,14 +200,15 @@ class TestTopK(TestFixtureCleanDB):
     @pytest.fixture
     async def products(self, client):
         rows = [
-            (1, 9.5, 40, [0.0, 0.0]),
-            (2, 7.25, 90, [3.0, 4.0]),
-            (3, 7.0, 90, [1.0, 1.0]),
-            (4, 5.0, 70, [0.5, 0.2]),
-            (5, 3.0, None, [5.0, 5.0]),
+            (1, 9.5, b"\x09", 40, [0.0, 0.0]),
+            (2, 7.25, b"\x07\x01", 90, [3.0, 4.0]),
+            (3, 7.0, b"\x07", 90, [1.0, 1.0]),
+            (4, 5.0, b"\x05", 70, [0.5, 0.2]),
+            (5, 3.0, b"\x03", None, [5.0, 5.0]),
         ]
-        for pid, price, score, embedding in rows:
-            bins = {"id": pid, "price": price, "embedding": Vector(embedding, VectorElementType.FLOAT64)}
+        for pid, price, sku, score, embedding in rows:
+            bins = {"id": pid, "price": price, "sku": sku,
+                    "embedding": Vector(embedding, VectorElementType.FLOAT64)}
             if score is not None:
                 bins["score"] = score
             await client.put(Key(NAMESPACE, SET, pid), bins)
@@ -226,6 +227,13 @@ class TestTopK(TestFixtureCleanDB):
         stmt.then_order_by("price", BinDataType.DOUBLE, Order.ASC)
         stmt.top_k = 2
         assert [r.bins["id"] for r in await collect(client, stmt)] == [3, 2]
+
+    async def test_bytes_order_key(self, client, products):
+        stmt = Statement(NAMESPACE, SET, ["id", "sku"])
+        stmt.set_order_by("sku", BinDataType.BYTES, Order.DESC)
+        stmt.top_k = 3
+        # Descending, so the longer value b"\x07\x01" ranks before its prefix b"\x07".
+        assert [r.bins["id"] for r in await collect(client, stmt)] == [1, 2, 3]
 
     async def test_missing_key_ranks_last_and_k_beyond_matches_returns_all(self, client, products):
         stmt = Statement(NAMESPACE, SET, ["id", "score"])

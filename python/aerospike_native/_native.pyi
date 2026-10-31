@@ -7461,6 +7461,10 @@ class BinDataType(enum.Enum):
     r"""
     64-bit float. NaN ranks after every other value; ``-0.0`` equals ``0.0``.
     """
+    BYTES = ...
+    r"""
+    Bytes, compared as unsigned bytes; a prefix ranks before the longer value.
+    """
 
 @typing.final
 class BitWriteFlags(enum.IntEnum):

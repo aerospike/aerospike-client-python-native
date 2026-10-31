@@ -1629,6 +1629,9 @@ pub enum Concurrency {
         /// 64-bit float. NaN ranks after every other value; ``-0.0`` equals ``0.0``.
         #[pyo3(name = "DOUBLE")]
         Double,
+        /// Bytes, compared as unsigned bytes; a prefix ranks before the longer value.
+        #[pyo3(name = "BYTES")]
+        Bytes,
     }
 
     impl From<BinDataType> for aerospike_core::OrderByType {
@@ -1636,6 +1639,7 @@ pub enum Concurrency {
             match input {
                 BinDataType::Integer => aerospike_core::OrderByType::Integer,
                 BinDataType::Double => aerospike_core::OrderByType::Double,
+                BinDataType::Bytes => aerospike_core::OrderByType::Bytes,
             }
         }
     }
@@ -1645,8 +1649,9 @@ pub enum Concurrency {
             match input {
                 aerospike_core::OrderByType::Integer => BinDataType::Integer,
                 aerospike_core::OrderByType::Double => BinDataType::Double,
-                aerospike_core::OrderByType::Bytes | aerospike_core::OrderByType::String => {
-                    unreachable!("order keys are only set through BinDataType, which is INTEGER or DOUBLE")
+                aerospike_core::OrderByType::Bytes => BinDataType::Bytes,
+                aerospike_core::OrderByType::String => {
+                    unreachable!("order keys are only set through BinDataType, which has no STRING")
                 }
             }
         }

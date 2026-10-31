@@ -273,9 +273,8 @@ class TestStatementTopK:
         stmt.set_order_by("rank", BinDataType.INTEGER, Order.ASC)
         assert [key.bin_name for key in stmt.order_by] == ["rank"]
 
-    def test_order_keys_are_integer_or_double_with_no_flags(self):
+    def test_order_keys_have_no_string_type_and_no_flags(self):
         assert not hasattr(BinDataType, "STRING")
-        assert not hasattr(BinDataType, "BYTES")
         assert not hasattr(aerospike_native, "OrderByFlags")
         with pytest.raises(TypeError):
             Statement("test", "products").set_order_by("score", BinDataType.INTEGER, Order.ASC, 1)
@@ -291,9 +290,9 @@ class TestStatementTopK:
 
     def test_order_by_compares_and_prints_by_value(self):
         stmt = Statement("test", "products")
-        stmt.set_order_by("score", BinDataType.DOUBLE, Order.ASC)
+        stmt.set_order_by("sku", BinDataType.BYTES, Order.ASC)
         other = Statement("test", "products")
-        other.set_order_by("score", BinDataType.DOUBLE, Order.ASC)
+        other.set_order_by("sku", BinDataType.BYTES, Order.ASC)
         assert stmt.order_by == other.order_by
         assert hash(stmt.order_by[0]) == hash(other.order_by[0])
-        assert repr(stmt.order_by[0]) == "OrderBy('score', BinDataType.DOUBLE, Order.ASC)"
+        assert repr(stmt.order_by[0]) == "OrderBy('sku', BinDataType.BYTES, Order.ASC)"

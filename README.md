@@ -265,7 +265,7 @@ await client.put(key, {"name": "lamp", "embedding": Vector([0.12, 0.98, -0.34])}
 ```
 
 A Top-K query keeps the `k` best records across the whole cluster, ordered by
-up to two integer or double keys. Order by a vector distance by computing it in the query's
+up to two integer, double or bytes keys. Order by a vector distance by computing it in the query's
 operations and ordering on the computed bin:
 
 ```python
