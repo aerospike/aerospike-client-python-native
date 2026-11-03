@@ -41,9 +41,7 @@ import pytest_asyncio
 
 from aerospike_native import (
     AbortStatus,
-    AuthMode,
     BatchPolicy,
-    ClientPolicy,
     CommitErrorType,
     CommitStatus,
     Key,
@@ -56,40 +54,7 @@ from aerospike_native import (
     new_client,
 )
 from aerospike_native.exceptions import CommitFailedError
-
-
-_AUTH_MODES = {
-    "NONE": AuthMode.NONE,
-    "INTERNAL": AuthMode.INTERNAL,
-    "EXTERNAL": AuthMode.EXTERNAL,
-    "PKI": AuthMode.PKI,
-}
-
-
-def _sc_client_policy() -> ClientPolicy:
-    cp = ClientPolicy()
-    cp.use_services_alternate = (
-        os.environ.get("AEROSPIKE_SC_USE_SERVICES_ALTERNATE")
-        or os.environ.get("AEROSPIKE_USE_SERVICES_ALTERNATE", "")
-    ).lower() == "true"
-    user = os.environ.get("AEROSPIKE_SC_USER") or os.environ.get("AEROSPIKE_AUTH_USER")
-    password = (
-        os.environ.get("AEROSPIKE_SC_PASSWORD")
-        or os.environ.get("AEROSPIKE_AUTH_PASSWORD")
-    )
-    mode_name = (
-        os.environ.get("AEROSPIKE_SC_AUTH_MODE")
-        or os.environ.get("AEROSPIKE_AUTH_MODE")
-        or ""
-    ).strip().upper()
-    if user and password:
-        mode = _AUTH_MODES.get(mode_name, AuthMode.INTERNAL)
-        cp.set_auth_mode(mode, user=user, password=password)
-    return cp
-
-
-def _sc_host() -> str:
-    return os.environ.get("AEROSPIKE_SC_HOST") or os.environ.get("AEROSPIKE_HOST", "")
+from fixtures import sc_client_policy, sc_host
 
 
 def _sc_namespace() -> str:
@@ -108,7 +73,7 @@ async def sc_client(sc_namespace):
     Skips whenever the cluster isn't reachable or the namespace isn't
     strong-consistency — mirrors the PSDK parity suite's skip shape.
     """
-    host = _sc_host()
+    host = sc_host()
     if not host:
         pytest.skip(
             "AEROSPIKE_SC_HOST (or AEROSPIKE_HOST) is not set; "
@@ -116,7 +81,7 @@ async def sc_client(sc_namespace):
         )
 
     try:
-        client = await new_client(_sc_client_policy(), host)
+        client = await new_client(sc_client_policy(), host)
     except Exception as exc:
         pytest.skip(f"cannot connect to SC cluster at {host!r}: {exc}")
 

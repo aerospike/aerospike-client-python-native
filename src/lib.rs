@@ -54,6 +54,7 @@ mod client_runtime;
 mod tasks;
 mod tls;
 mod host;
+mod discovery;
 mod record;
 mod cdt;
 mod expressions;
@@ -80,6 +81,7 @@ pub use cluster::*;
 pub use server_error::*;
 pub use tls::*;
 pub use host::*;
+pub use discovery::*;
 pub use string_ops::*;
 pub use metrics::*;
 
@@ -101,6 +103,7 @@ use crate::operations::{
     #[pyfunction]
     #[gen_stub(override_return_type(type_repr="typing.Awaitable[Client]", imports=("typing")))]
     pub fn new_client(py: Python, policy: ClientPolicy, seeds: Seeds) -> PyResult<Py<PyAny>> {
+        seeds.check(&policy._as)?;
         let as_policy = policy._as.clone();
         let seed_string = seeds.to_seed_string();
         let cluster_name = as_policy.cluster_name.clone();
@@ -436,6 +439,7 @@ use crate::operations::{
     impl LocalClient {
         #[new]
         pub fn new(policy: ClientPolicy, seeds: Seeds) -> PyResult<Self> {
+            seeds.check(&policy._as)?;
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_io()
                 .enable_time()
@@ -5311,6 +5315,14 @@ fn _native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "tls")]
     m.add_class::<TlsConfig>()?;
     m.add_class::<Host>()?;
+    m.add_class::<StaticSeedCandidateProvider>()?;
+    m.add_class::<DnsSeedCandidateProvider>()?;
+    m.add_class::<StaticMapAddressTranslator>()?;
+    m.add_class::<PortMapAddressTranslator>()?;
+    m.add_class::<PassThroughAddressTranslator>()?;
+    m.add_class::<TranslationMissMode>()?;
+    m.add_class::<SeedMergePolicy>()?;
+    m.add_class::<DnsRecordType>()?;
 
     m.add_function(wrap_pyfunction!(new_client, m)?)?;
     m.add_function(wrap_pyfunction!(crate::blocking::new_client_blocking, m)?)?;

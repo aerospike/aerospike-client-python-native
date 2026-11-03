@@ -899,6 +899,9 @@ pub enum Concurrency {
                 // like the other clients this class declares no constant for it.
                 AnyCode::Client(rc) => {
                     return match rc {
+                        ClientResultCode::SeedDiscoveryFailed => "SEED_DISCOVERY_FAILED",
+                        ClientResultCode::TranslationCollision => "TRANSLATION_COLLISION",
+                        ClientResultCode::TranslationMiss => "TRANSLATION_MISS",
                         ClientResultCode::TxnAlreadyAborted => "TXN_ALREADY_ABORTED",
                         ClientResultCode::TxnAlreadyCommitted => "TXN_ALREADY_COMMITTED",
                         ClientResultCode::TxnFailed => "TXN_FAILED",
@@ -1213,6 +1216,12 @@ pub enum Concurrency {
         fn QUERY_DUPLICATE() -> ResultCode { ResultCode::from(CoreResultCode::QueryDuplicate) }
 
         // Client-assigned codes: the negative half of the namespace.
+        #[classattr]
+        fn SEED_DISCOVERY_FAILED() -> ResultCode { ResultCode::from(ClientResultCode::SeedDiscoveryFailed) }
+        #[classattr]
+        fn TRANSLATION_COLLISION() -> ResultCode { ResultCode::from(ClientResultCode::TranslationCollision) }
+        #[classattr]
+        fn TRANSLATION_MISS() -> ResultCode { ResultCode::from(ClientResultCode::TranslationMiss) }
         #[classattr]
         fn TXN_ALREADY_ABORTED() -> ResultCode { ResultCode::from(ClientResultCode::TxnAlreadyAborted) }
         #[classattr]
@@ -1689,6 +1698,149 @@ pub enum Concurrency {
         }
     }
 
+    ////////////////////////////////////////////////////////////////////////////////////////////
+    //
+    //  Discovery: TranslationMissMode, SeedMergePolicy, DnsRecordType
+    //
+    ////////////////////////////////////////////////////////////////////////////////////////////
+
+    /// What the client does when :attr:`ClientPolicy.address_translator` has
+    /// no mapping for an address a server advertises.
+    ///
+    /// Applies to every translator, including the default one built from
+    /// :attr:`ClientPolicy.ip_map`.
+    ///
+    /// Example::
+    ///
+    ///     policy = ClientPolicy()
+    ///     policy.address_translator = PortMapAddressTranslator(
+    ///         {"10.0.0.1:3000": "lb.example.com:30001"}
+    ///     )
+    ///     policy.translation_on_miss = TranslationMissMode.STRICT
+    #[gen_stub_pyclass_enum(module = "_native")]
+    #[pyclass(from_py_object, module = "_native")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum TranslationMissMode {
+        /// Connect to the advertised address unchanged. The default.
+        #[pyo3(name = "PASS_THROUGH")]
+        PassThrough,
+        /// Do not connect to the advertised address: the peer is left out of
+        /// the cluster, the miss logged at warning level with
+        /// ``ResultCode.TRANSLATION_MISS``, and retried on the next tend.
+        #[pyo3(name = "STRICT")]
+        Strict,
+    }
+
+    impl From<TranslationMissMode> for aerospike_core::discovery::TranslationMissMode {
+        fn from(input: TranslationMissMode) -> Self {
+            match input {
+                TranslationMissMode::PassThrough => Self::PassThrough,
+                TranslationMissMode::Strict => Self::Strict,
+            }
+        }
+    }
+
+    impl From<aerospike_core::discovery::TranslationMissMode> for TranslationMissMode {
+        fn from(input: aerospike_core::discovery::TranslationMissMode) -> Self {
+            match input {
+                aerospike_core::discovery::TranslationMissMode::PassThrough => Self::PassThrough,
+                aerospike_core::discovery::TranslationMissMode::Strict => Self::Strict,
+            }
+        }
+    }
+
+    /// How the seeds passed to the client constructor (static seeds) and the
+    /// seeds :attr:`ClientPolicy.seed_candidate_provider` returns (discovered
+    /// seeds) are combined into the list of seeds the client tries.
+    ///
+    /// Duplicates (same name and port) are dropped, keeping the first. The
+    /// policy orders seed attempts only; it never changes which nodes join.
+    ///
+    /// Example::
+    ///
+    ///     policy = ClientPolicy()
+    ///     policy.seed_candidate_provider = DnsSeedCandidateProvider(
+    ///         ["aerospike.prod.example.com"]
+    ///     )
+    ///     policy.discovery_merge_policy = SeedMergePolicy.DISCOVERY_ONLY
+    #[gen_stub_pyclass_enum(module = "_native")]
+    #[pyclass(from_py_object, module = "_native")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum SeedMergePolicy {
+        /// Static seeds first, then discovered seeds. The default: the static
+        /// seeds stay a known-good fallback while discovery is adopted.
+        #[pyo3(name = "MERGE")]
+        Merge,
+        /// Static then discovered seeds at initialization; afterwards each
+        /// refresh's discovered seeds replace the list, and an empty refresh
+        /// keeps the previous list.
+        #[pyo3(name = "REPLACE")]
+        Replace,
+        /// Discovered seeds only, falling back to the static seeds whenever
+        /// discovery returns none.
+        #[pyo3(name = "DISCOVERY_ONLY")]
+        DiscoveryOnly,
+    }
+
+    impl From<SeedMergePolicy> for aerospike_core::discovery::SeedMergePolicy {
+        fn from(input: SeedMergePolicy) -> Self {
+            match input {
+                SeedMergePolicy::Merge => Self::Merge,
+                SeedMergePolicy::Replace => Self::Replace,
+                SeedMergePolicy::DiscoveryOnly => Self::DiscoveryOnly,
+            }
+        }
+    }
+
+    impl From<aerospike_core::discovery::SeedMergePolicy> for SeedMergePolicy {
+        fn from(input: aerospike_core::discovery::SeedMergePolicy) -> Self {
+            match input {
+                aerospike_core::discovery::SeedMergePolicy::Merge => Self::Merge,
+                aerospike_core::discovery::SeedMergePolicy::Replace => Self::Replace,
+                aerospike_core::discovery::SeedMergePolicy::DiscoveryOnly => Self::DiscoveryOnly,
+            }
+        }
+    }
+
+    /// DNS record type a :class:`DnsSeedCandidateProvider` queries.
+    ///
+    /// Example::
+    ///
+    ///     provider = DnsSeedCandidateProvider(
+    ///         ["_aerospike._tcp.prod.example.com"], record_type=DnsRecordType.SRV
+    ///     )
+    #[gen_stub_pyclass_enum(module = "_native")]
+    #[pyclass(from_py_object, module = "_native")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum DnsRecordType {
+        /// A and AAAA records, each address given the provider's port. The
+        /// default.
+        #[pyo3(name = "A")]
+        A,
+        /// SRV records, each target resolved to an address and given the
+        /// record's port.
+        #[pyo3(name = "SRV")]
+        Srv,
+    }
+
+    impl From<DnsRecordType> for aerospike_core::discovery::dns::RecordType {
+        fn from(input: DnsRecordType) -> Self {
+            match input {
+                DnsRecordType::A => Self::A,
+                DnsRecordType::Srv => Self::Srv,
+            }
+        }
+    }
+
+    impl From<aerospike_core::discovery::dns::RecordType> for DnsRecordType {
+        fn from(input: aerospike_core::discovery::dns::RecordType) -> Self {
+            match input {
+                aerospike_core::discovery::dns::RecordType::A => Self::A,
+                aerospike_core::discovery::dns::RecordType::Srv => Self::Srv,
+            }
+        }
+    }
+
     macro_rules! impl_simple_enum_eq_hash {
         ($($ty:ty),*) => {$(
             #[pymethods]
@@ -1714,4 +1866,4 @@ pub enum Concurrency {
         )*};
     }
 
-    impl_simple_enum_eq_hash!(BinDataType, Order);
+    impl_simple_enum_eq_hash!(BinDataType, Order, TranslationMissMode, SeedMergePolicy, DnsRecordType);
