@@ -1427,6 +1427,22 @@ use aerospike_core::VectorData;
             Ok(Vector { v })
         }
 
+        /// Encodes the vector as a complete wire value, the inverse of
+        /// :meth:`from_wire_bytes`: the header followed by the little-endian
+        /// elements. Use it to carry a vector as ``bytes``, such as in a blob
+        /// bin; ``bytes(v)`` gives only the elements, without the header.
+        ///
+        /// Example::
+        ///
+        ///     embedding = Vector([0.12, 0.98, -0.34])
+        ///     await client.put(key, {"embedding_blob": embedding.to_wire_bytes()})
+        ///
+        /// Returns:
+        ///     The encoded vector.
+        pub fn to_wire_bytes<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+            PyBytes::new(py, &self.v.wire_bytes())
+        }
+
         /// The element type.
         #[getter]
         pub fn element_type(&self) -> VectorElementType {

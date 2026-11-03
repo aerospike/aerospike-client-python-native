@@ -7127,6 +7127,21 @@ class Vector:
         Raises:
             ValueError: The bytes are not a valid vector wire value.
         """
+    def to_wire_bytes(self) -> bytes:
+        r"""
+        Encodes the vector as a complete wire value, the inverse of
+        :meth:`from_wire_bytes`: the header followed by the little-endian
+        elements. Use it to carry a vector as ``bytes``, such as in a blob
+        bin; ``bytes(v)`` gives only the elements, without the header.
+
+        Example::
+
+            embedding = Vector([0.12, 0.98, -0.34])
+            await client.put(key, {"embedding_blob": embedding.to_wire_bytes()})
+
+        Returns:
+            The encoded vector.
+        """
     def __len__(self) -> builtins.int: ...
     def __getitem__(self, index: typing.Any) -> builtins.int | builtins.float | builtins.list[builtins.int] | builtins.list[builtins.float]: ...
     def __iter__(self) -> typing.Iterator[builtins.int | builtins.float]: ...
@@ -8152,6 +8167,27 @@ class VectorDistanceMetric(enum.Enum):
     r"""
     Cosine similarity. Larger is more similar.
     """
+
+    @property
+    def nearest_order(self) -> _native.Order:
+        r"""
+        The Top-K order that ranks the nearest vectors first: :attr:`Order.ASC`
+        for :attr:`EUCLIDEAN_SQUARED`, where smaller is closer, and
+        :attr:`Order.DESC` for :attr:`DOT_PRODUCT` and
+        :attr:`COSINE_SIMILARITY`, where larger is more similar.
+
+        Example::
+
+            metric = VectorDistanceMetric.COSINE_SIMILARITY
+            distance = FilterExpression.vector_distance(metric, query, FilterExpression.vector_bin("embedding"))
+            stmt = Statement("test", "products")
+            stmt.set_operations([ExpOperation.read("distance", distance, ExpReadFlags.DEFAULT)])
+            stmt.set_order_by("distance", BinDataType.DOUBLE, metric.nearest_order)
+            stmt.top_k = 10
+        """
+    def __eq__(self, other: object) -> builtins.bool: ...
+    def __ne__(self, other: object) -> builtins.bool: ...
+    def __hash__(self) -> builtins.int: ...
 
 @typing.final
 class VectorElementType(enum.Enum):

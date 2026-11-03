@@ -23,6 +23,7 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_py
 
 
 use crate::cdt::*;
+use crate::enums::Order;
 use crate::errors::RustClientError;
 use crate::record::{PythonValue, Vector};
 use crate::string_ops::StringNumericType;
@@ -102,8 +103,30 @@ use crate::string_ops::StringNumericType;
         CosineSimilarity,
     }
 
+    #[gen_stub_pymethods]
     #[pymethods]
     impl VectorDistanceMetric {
+        /// The Top-K order that ranks the nearest vectors first: :attr:`Order.ASC`
+        /// for :attr:`EUCLIDEAN_SQUARED`, where smaller is closer, and
+        /// :attr:`Order.DESC` for :attr:`DOT_PRODUCT` and
+        /// :attr:`COSINE_SIMILARITY`, where larger is more similar.
+        ///
+        /// Example::
+        ///
+        ///     metric = VectorDistanceMetric.COSINE_SIMILARITY
+        ///     distance = FilterExpression.vector_distance(metric, query, FilterExpression.vector_bin("embedding"))
+        ///     stmt = Statement("test", "products")
+        ///     stmt.set_operations([ExpOperation.read("distance", distance, ExpReadFlags.DEFAULT)])
+        ///     stmt.set_order_by("distance", BinDataType.DOUBLE, metric.nearest_order)
+        ///     stmt.top_k = 10
+        #[getter]
+        pub fn nearest_order(&self) -> Order {
+            match self {
+                VectorDistanceMetric::EuclideanSquared => Order::Asc,
+                VectorDistanceMetric::DotProduct | VectorDistanceMetric::CosineSimilarity => Order::Desc,
+            }
+        }
+
         fn __richcmp__(&self, other: &VectorDistanceMetric, op: pyo3::class::basic::CompareOp) -> PyResult<bool> {
             match op {
                 pyo3::class::basic::CompareOp::Eq => Ok(self == other),

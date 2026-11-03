@@ -257,7 +257,7 @@ copying. It is stored as a whole bin value, not nested in a list or map.
 
 ```python
 from aerospike_native import (
-    BinDataType, ExpOperation, ExpReadFlags, FilterExpression, Operation, Order,
+    BinDataType, ExpOperation, ExpReadFlags, FilterExpression, Operation,
     PartitionFilter, Statement, Vector, VectorDistanceMetric,
 )
 
@@ -270,16 +270,16 @@ operations and ordering on the computed bin:
 
 ```python
 query = Vector([0.10, 0.95, -0.30])
-distance = FilterExpression.vector_distance(
-    VectorDistanceMetric.COSINE_SIMILARITY, query, FilterExpression.vector_bin("embedding"),
-)
+metric = VectorDistanceMetric.COSINE_SIMILARITY
+distance = FilterExpression.vector_distance(metric, query, FilterExpression.vector_bin("embedding"))
 
 stmt = Statement("test", "products")
 stmt.set_operations([
     Operation.get_bin("name"),
     ExpOperation.read("similarity", distance, ExpReadFlags.DEFAULT),
 ])
-stmt.set_order_by("similarity", BinDataType.DOUBLE, Order.DESC)
+# ASC for EUCLIDEAN_SQUARED, DESC for DOT_PRODUCT and COSINE_SIMILARITY.
+stmt.set_order_by("similarity", BinDataType.DOUBLE, metric.nearest_order)
 stmt.top_k = 10
 
 async for record in await client.query(stmt, PartitionFilter.all()):

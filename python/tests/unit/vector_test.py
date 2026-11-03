@@ -227,6 +227,24 @@ class TestVectorWireBytes:
         assert Vector.from_wire_bytes(wire_bytes(type_code, fmt, values)) == Vector(values, element_type)
 
     @pytest.mark.parametrize(
+        "type_code, fmt, element_type, values",
+        [
+            (0x01, "e", VectorElementType.FLOAT16, [1.0, -2.0]),
+            (0x02, "i", VectorElementType.INT32, [7, -8]),
+            (0x03, "f", VectorElementType.FLOAT32, [1.5, -2.5]),
+            (0x04, "d", VectorElementType.FLOAT64, [0.25, 1e300]),
+        ],
+    )
+    def test_encodes_each_element_type(self, type_code, fmt, element_type, values):
+        v = Vector(values, element_type)
+        assert v.to_wire_bytes() == wire_bytes(type_code, fmt, values)
+        assert Vector.from_wire_bytes(v.to_wire_bytes()) == v
+
+    def test_bytes_of_a_vector_omit_the_header(self):
+        v = Vector([1.5, -2.5])
+        assert v.to_wire_bytes()[6:] == bytes(v)
+
+    @pytest.mark.parametrize(
         "data, reason",
         [
             (wire_bytes(0x03, "f", [1.0]) + b"\x00", "invalid vector length: 11"),
@@ -256,6 +274,17 @@ class TestVectorExpressions:
     def test_distance_builds_for_each_metric(self, metric):
         exp = FilterExpression.vector_distance(metric, Vector([1.0]), FilterExpression.vector_bin("embedding"))
         assert isinstance(exp, FilterExpression)
+
+    @pytest.mark.parametrize(
+        "metric, order",
+        [
+            (VectorDistanceMetric.EUCLIDEAN_SQUARED, Order.ASC),
+            (VectorDistanceMetric.DOT_PRODUCT, Order.DESC),
+            (VectorDistanceMetric.COSINE_SIMILARITY, Order.DESC),
+        ],
+    )
+    def test_nearest_order_ranks_the_closest_first(self, metric, order):
+        assert metric.nearest_order == order
 
 
 class TestStatementTopK:
