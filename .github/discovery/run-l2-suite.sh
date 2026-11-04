@@ -89,7 +89,7 @@ python3 -c "import aerospike_native, pytest, pytest_asyncio" || {
 # workspace is bind-mounted and the container runs as root. The rows print
 # client warnings themselves as CLIENT-LOG lines, so live logging would print
 # each one twice.
-args=(-v -rfEs --import-mode=append -p no:cacheprovider -o log_cli=false)
+args=(-v -rfEsxX --import-mode=append -p no:cacheprovider -o log_cli=false)
 if [[ -n "${L2_FILTER:-}" ]]; then
   args+=(-k "${L2_FILTER}")
   target="$suite"
