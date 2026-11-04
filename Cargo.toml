@@ -28,6 +28,8 @@ pyo3-stub-gen = { version = "0.23", default-features = false, features = ["infer
 log = "0.4"
 pyo3-log = "0.13"
 futures = "0.3"
+# Implements aerospike-core's async SeedCandidateProvider trait for Python providers.
+async-trait = "0.1"
 # Same provider as core (`ring`): with a second one compiled in, rustls panics
 # at handshake unless a process-wide CryptoProvider is installed first.
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"], optional = true }
@@ -46,9 +48,10 @@ half = "2"
 pyo3-build-config = "0.29"
 
 [features]
-default = ["extension-module", "tls"]
+default = ["extension-module", "tls", "discovery-aws"]
 extension-module = ["pyo3/extension-module"]
 tls = ["aerospike-core/tls", "tokio-rustls", "rustls", "webpki-roots"]
+discovery-aws = ["tls", "aerospike-core/discovery-aws"]
 
 [[bin]]
 name = "stub_gen"

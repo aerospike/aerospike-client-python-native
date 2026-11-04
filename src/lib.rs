@@ -55,6 +55,7 @@ mod tasks;
 mod tls;
 mod host;
 mod discovery;
+mod conformance;
 mod record;
 mod cdt;
 mod expressions;
@@ -103,8 +104,8 @@ use crate::operations::{
     #[pyfunction]
     #[gen_stub(override_return_type(type_repr="typing.Awaitable[Client]", imports=("typing")))]
     pub fn new_client(py: Python, policy: ClientPolicy, seeds: Seeds) -> PyResult<Py<PyAny>> {
-        seeds.check(&policy._as)?;
-        let as_policy = policy._as.clone();
+        let as_policy = policy.core_policy(py)?;
+        seeds.check(&as_policy)?;
         let seed_string = seeds.to_seed_string();
         let cluster_name = as_policy.cluster_name.clone();
         // Capture the loop the caller is awaiting on; this becomes the bridge's
@@ -438,8 +439,9 @@ use crate::operations::{
     #[pymethods]
     impl LocalClient {
         #[new]
-        pub fn new(policy: ClientPolicy, seeds: Seeds) -> PyResult<Self> {
-            seeds.check(&policy._as)?;
+        pub fn new(py: Python<'_>, policy: ClientPolicy, seeds: Seeds) -> PyResult<Self> {
+            let as_policy = policy.core_policy(py)?;
+            seeds.check(&as_policy)?;
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_io()
                 .enable_time()
@@ -447,11 +449,12 @@ use crate::operations::{
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(
                     format!("failed to build current_thread Tokio runtime: {e}")
                 ))?;
-            let as_policy = policy._as.clone();
             let cluster_name = as_policy.cluster_name.clone();
-            let client = crate::blocking::block_on(&rt, async move {
+            // Detached: a Python seed provider is called from another thread
+            // during construction and needs the GIL.
+            let client = py.detach(|| crate::blocking::block_on(&rt, async move {
                 aerospike_core::Client::new(&as_policy, seeds.as_to_hosts()).await
-            })?.map_err(|e| PyErr::from(RustClientError(e)))?;
+            }))?.map_err(|e| PyErr::from(RustClientError(e)))?;
             Ok(LocalClient {
                 rt,
                 client: Arc::new(client),
@@ -4777,6 +4780,19 @@ use crate::operations::{
             self._as.nodes().into_iter().map(|n| Node { _as: n }).collect()
         }
 
+        /// The master of every partition of `namespace` in the client's
+        /// partition map, by partition id; ``None`` where no node claims the
+        /// partition, and ``None`` for the whole map when the namespace is
+        /// not mapped. Test support for the discovery topology tests, not API.
+        fn _partition_masters(&self, namespace: &str) -> Option<Vec<Option<Node>>> {
+            self._as.partition_masters(namespace).map(|masters| {
+                masters
+                    .into_iter()
+                    .map(|node| node.map(|n| Node { _as: n }))
+                    .collect()
+            })
+        }
+
         /// Commit a multi-record transaction.
         ///
         /// Verifies all transaction record versions, then applies all writes
@@ -5317,12 +5333,24 @@ fn _native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Host>()?;
     m.add_class::<StaticSeedCandidateProvider>()?;
     m.add_class::<DnsSeedCandidateProvider>()?;
+    #[cfg(feature = "discovery-aws")]
+    {
+        m.add_class::<AwsEc2TagSeedCandidateProvider>()?;
+        m.add_class::<AwsCredentials>()?;
+        m.add_class::<AwsAddressField>()?;
+    }
+    m.add_class::<PySeedCandidateProvider>()?;
+    m.add_class::<SeedCandidateContext>()?;
     m.add_class::<StaticMapAddressTranslator>()?;
     m.add_class::<PortMapAddressTranslator>()?;
     m.add_class::<PassThroughAddressTranslator>()?;
     m.add_class::<TranslationMissMode>()?;
     m.add_class::<SeedMergePolicy>()?;
     m.add_class::<DnsRecordType>()?;
+    m.add_function(wrap_pyfunction!(conformance::translate, m)?)?;
+    #[cfg(feature = "tls")]
+    m.add_function(wrap_pyfunction!(conformance::tls_name_matches, m)?)?;
+    m.add_class::<conformance::ConformanceRefresher>()?;
 
     m.add_function(wrap_pyfunction!(new_client, m)?)?;
     m.add_function(wrap_pyfunction!(crate::blocking::new_client_blocking, m)?)?;

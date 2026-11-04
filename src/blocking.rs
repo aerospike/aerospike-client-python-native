@@ -124,8 +124,8 @@ pub(crate) fn new_client_blocking(
     policy: ClientPolicy,
     seeds: Seeds,
 ) -> PyResult<Client> {
-    seeds.check(&policy._as)?;
-    let as_policy = policy._as.clone();
+    let as_policy = policy.core_policy(py)?;
+    seeds.check(&as_policy)?;
     let seed_string = seeds.to_seed_string();
     let cluster_name = as_policy.cluster_name.clone();
     log::debug!(target: "aerospike_native", "connecting (blocking) to {}", seed_string);

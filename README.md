@@ -218,6 +218,59 @@ on the cluster tend task, and each refresh must finish within
 `discovery_tend_refresh_deadline` (100 ms), so its `timeout` (80 ms) may not
 exceed the deadline. `StaticSeedCandidateProvider` returns a fixed list.
 
+For a self-managed cluster on EC2, `AwsEc2TagSeedCandidateProvider` lists
+the running instances that match a set of `DescribeInstances` filters,
+usually a tag, in the credentials' own account and region. It needs only the
+`ec2:DescribeInstances` permission, and finds credentials the usual way
+(environment, shared credentials file, EKS web identity, ECS, instance
+profile). For any other source, such as SSO or an assumed role, pass a
+`credentials_hook`: a callable returning `AwsCredentials`. It is called at the
+first refresh and again whenever the credentials it returned are within five
+minutes of their expiration, on the task running the refresh, so it should
+return credentials refreshed elsewhere rather than call AWS itself:
+
+```python
+from aerospike_native import AwsCredentials, AwsEc2TagSeedCandidateProvider
+
+
+def latest_role_credentials():
+    c = role_session.credentials  # refreshed by the application in the background
+    return AwsCredentials(c["AccessKeyId"], c["SecretAccessKey"], c["SessionToken"], c["Expiration"])
+
+
+policy.seed_candidate_provider = AwsEc2TagSeedCandidateProvider(
+    "us-east-1", {"tag:aerospike-cluster": ["prod-a"]}, credentials_hook=latest_role_credentials,
+)
+```
+
+Like the DNS provider, it refreshes on the tend task, within its `timeout`
+(80 ms); the first refresh, at construction, gets `init_timeout` (10 s).
+
+For any other source, such as a service registry or a cloud API, subclass
+`SeedCandidateProvider`. Its refreshes run on a background thread the client
+starts for the provider, not on the tend task, so a refresh may block; the
+tend task uses the latest successful result. A refresh that takes longer than
+`discovery_refresh_timeout` (10 s) is discarded, and `client.close()` waits up
+to that long for one in progress before calling the provider's `close`:
+
+```python
+from aerospike_native import Host, SeedCandidateProvider
+
+
+class RegistryProvider(SeedCandidateProvider):
+    def __init__(self, registry):
+        self.registry = registry
+
+    def refresh_seed_candidates(self, ctx):
+        return [Host(node.ip, 3000) for node in self.registry.lookup("aerospike")]
+
+    def needs_periodic_refresh(self):
+        return True
+
+
+policy.seed_candidate_provider = RegistryProvider(registry)
+```
+
 An address translator rewrites the address each node advertises for its peers
 before the client connects to it, for a NAT or load balancer in front of the
 cluster. `PortMapAddressTranslator` maps an advertised `host:port`, or a node

@@ -15,8 +15,13 @@
 
 """Unit tests for seed discovery and address translation settings."""
 
+from datetime import datetime, timezone
+
 import pytest
 from aerospike_native import (
+    AwsAddressField,
+    AwsCredentials,
+    AwsEc2TagSeedCandidateProvider,
     ClientPolicy,
     DnsRecordType,
     DnsSeedCandidateProvider,
@@ -24,6 +29,7 @@ from aerospike_native import (
     PassThroughAddressTranslator,
     PortMapAddressTranslator,
     ResultCode,
+    SeedCandidateProvider,
     SeedMergePolicy,
     StaticMapAddressTranslator,
     StaticSeedCandidateProvider,
@@ -40,6 +46,22 @@ def dns_provider(**kwargs) -> DnsSeedCandidateProvider:
     return DnsSeedCandidateProvider(["seeds.example.com"], servers=[DEAD_RESOLVER], **kwargs)
 
 
+def aws_provider(**kwargs) -> AwsEc2TagSeedCandidateProvider:
+    return AwsEc2TagSeedCandidateProvider("us-east-1", {"tag:aerospike-cluster": ["prod-a"]}, **kwargs)
+
+
+class RegistryProvider(SeedCandidateProvider):
+    """Fails every refresh, recording the context of each."""
+
+    def __init__(self, registry_url):
+        self.registry_url = registry_url
+        self.contexts = []
+
+    def refresh_seed_candidates(self, ctx):
+        self.contexts.append(ctx)
+        raise RuntimeError(f"{self.registry_url} is unavailable")
+
+
 class TestClientPolicy:
     """Discovery settings on ClientPolicy."""
 
@@ -51,6 +73,13 @@ class TestClientPolicy:
         assert policy.discovery_merge_policy == SeedMergePolicy.MERGE
         assert policy.discovery_refresh_interval == 30000
         assert policy.discovery_tend_refresh_deadline == 100
+        assert policy.discovery_refresh_timeout == 10000
+
+    def test_zero_refresh_timeout_is_rejected(self):
+        policy = ClientPolicy()
+        with pytest.raises(ValueError, match="discovery_refresh_timeout must be greater than 0"):
+            policy.discovery_refresh_timeout = 0
+        assert policy.discovery_refresh_timeout == 10000
 
     def test_settings_round_trip(self):
         policy = ClientPolicy()
@@ -65,8 +94,8 @@ class TestClientPolicy:
 
     @pytest.mark.parametrize(
         "provider",
-        [StaticSeedCandidateProvider([Host("10.0.0.1", 3000)]), dns_provider()],
-        ids=["static", "dns"],
+        [StaticSeedCandidateProvider([Host("10.0.0.1", 3000)]), dns_provider(), aws_provider()],
+        ids=["static", "dns", "aws"],
     )
     def test_seed_candidate_provider_round_trips(self, provider):
         policy = ClientPolicy()
@@ -75,6 +104,20 @@ class TestClientPolicy:
         assert policy.seed_candidate_provider == provider
         policy.seed_candidate_provider = None
         assert policy.seed_candidate_provider is None
+
+    def test_subclass_provider_is_kept_as_is(self):
+        provider = RegistryProvider("https://registry.example.com")
+        policy = ClientPolicy()
+        policy.seed_candidate_provider = provider
+        assert policy.seed_candidate_provider is provider
+
+    def test_object_that_is_not_a_subclass_is_rejected(self):
+        class LooksLikeAProvider:
+            def refresh_seed_candidates(self, ctx):
+                return []
+
+        with pytest.raises(TypeError, match="or a SeedCandidateProvider subclass"):
+            ClientPolicy().seed_candidate_provider = LooksLikeAProvider()
 
     @pytest.mark.parametrize(
         "translator",
@@ -145,6 +188,114 @@ class TestDnsSeedCandidateProvider:
             DnsSeedCandidateProvider("seeds.example.com")
 
 
+class TestAwsEc2TagSeedCandidateProvider:
+    """AwsEc2TagSeedCandidateProvider settings, credentials and their validation."""
+
+    def test_defaults(self):
+        provider = aws_provider()
+        assert provider.region == "us-east-1"
+        assert provider.filters == {"tag:aerospike-cluster": ["prod-a"]}
+        assert provider.address_field == AwsAddressField.PRIVATE_IP
+        assert (provider.port, provider.tls_name, provider.endpoint) == (3000, None, None)
+        assert (provider.timeout, provider.init_timeout) == (80, 10000)
+        assert provider.credentials is None and provider.credentials_hook is None
+
+    def test_settings(self):
+        credentials = AwsCredentials("AKIAEXAMPLE", "secret")
+        provider = AwsEc2TagSeedCandidateProvider(
+            "eu-west-1",
+            {"tag:aerospike-cluster": ["prod-a", "prod-b"], "subnet-id": ["subnet-0123"]},
+            address_field=AwsAddressField.PUBLIC_DNS,
+            port=4333,
+            tls_name="prod",
+            timeout=60,
+            init_timeout=5000,
+            endpoint="https://vpce-0123.ec2.eu-west-1.vpce.amazonaws.com",
+            credentials=credentials,
+        )
+        assert list(provider.filters) == ["tag:aerospike-cluster", "subnet-id"]
+        assert provider.address_field == AwsAddressField.PUBLIC_DNS
+        assert (provider.port, provider.tls_name, provider.timeout, provider.init_timeout) == (4333, "prod", 60, 5000)
+        assert provider.endpoint == "https://vpce-0123.ec2.eu-west-1.vpce.amazonaws.com"
+        assert provider.credentials == credentials
+
+    @pytest.mark.parametrize(
+        ("region", "filters", "kwargs", "message"),
+        [
+            ("US", {"tag:a": ["b"]}, {}, "region: 'US'"),
+            ("us-east-1", {}, {}, "at least one filter is required"),
+            ("us-east-1", {"instance-state-name": ["running"]}, {}, "the provider adds instance-state-name=running"),
+            ("us-east-1", {"tag:a": []}, {}, "filter 'tag:a' values: empty"),
+            ("us-east-1", {"tag:a": ["b"]}, {"endpoint": "ftp://ec2.example.com"}, "endpoint: 'ftp://ec2.example.com'"),
+            (
+                "us-east-1",
+                {"tag:a": ["b"]},
+                {"credentials": AwsCredentials("AKIAEXAMPLE", "secret"), "credentials_hook": lambda: None},
+                "credentials and credentials_hook cannot both be set",
+            ),
+        ],
+    )
+    def test_invalid_setting_is_rejected(self, region, filters, kwargs, message):
+        with pytest.raises(ValueError, match=message):
+            AwsEc2TagSeedCandidateProvider(region, filters, **kwargs)
+
+    def test_hook_must_be_callable(self):
+        with pytest.raises(TypeError, match="credentials_hook must be callable, not str"):
+            aws_provider(credentials_hook="AKIAEXAMPLE")
+
+    def test_credentials_hide_the_secret(self):
+        expiration = datetime(2030, 1, 1, tzinfo=timezone.utc)
+        credentials = AwsCredentials("AKIAEXAMPLE", "wJalrXUtnFEMI", "session-token", expiration)
+        assert credentials.access_key_id == "AKIAEXAMPLE"
+        assert credentials.expiration == expiration
+        assert "wJalrXUtnFEMI" not in repr(credentials) and "session-token" not in repr(credentials)
+        assert AwsCredentials("AKIAEXAMPLE", "secret").expiration is None
+        with pytest.raises(ValueError, match="secret access key is empty"):
+            AwsCredentials("AKIAEXAMPLE", "")
+
+    @staticmethod
+    def expired_sso_session():
+        raise RuntimeError("SSO session expired")
+
+    @staticmethod
+    def bare_key_pair():
+        return ("AKIAEXAMPLE", "secret")
+
+    @pytest.mark.parametrize(
+        ("hook", "message"),
+        [
+            (expired_sso_session, "RuntimeError: SSO session expired"),
+            (bare_key_pair, "it returned tuple, not AwsCredentials"),
+        ],
+        ids=["raises", "wrong-type"],
+    )
+    def test_failing_hook_fails_construction(self, hook, message):
+        policy = ClientPolicy()
+        policy.seed_candidate_provider = aws_provider(credentials_hook=hook)
+        with pytest.raises(ClientError) as exc_info:
+            new_client_blocking(policy, [])
+        assert exc_info.value.result_code == ResultCode.SEED_DISCOVERY_FAILED
+        assert f"credentials hook failed: {message}" in str(exc_info.value)
+
+
+class TestSeedCandidateProviderBase:
+    """Defaults a SeedCandidateProvider subclass inherits."""
+
+    def test_defaults(self):
+        provider = SeedCandidateProvider()
+        assert provider.needs_periodic_refresh() is False
+        assert provider.close() is None
+
+    def test_refresh_must_be_overridden(self):
+        class Unfinished(SeedCandidateProvider):
+            pass
+
+        policy = ClientPolicy()
+        policy.seed_candidate_provider = Unfinished()
+        with pytest.raises(ClientError, match="NotImplementedError: SeedCandidateProvider subclasses must override"):
+            new_client_blocking(policy, [])
+
+
 class TestAddressTranslators:
     """Translator construction, validation and value semantics."""
 
@@ -183,6 +334,29 @@ class TestClientConstruction:
         assert exc_info.value.result_code == ResultCode.SEED_DISCOVERY_FAILED
         assert "provider dns failed" in str(exc_info.value)
         assert "seeds.example.com" in str(exc_info.value)
+
+    def test_failing_subclass_provider_fails_construction(self):
+        provider = RegistryProvider("https://registry.example.com")
+        policy = ClientPolicy()
+        policy.cluster_name = "prod"
+        policy.seed_candidate_provider = provider
+        with pytest.raises(ClientError) as exc_info:
+            new_client_blocking(policy, [])
+        assert exc_info.value.result_code == ResultCode.SEED_DISCOVERY_FAILED
+        assert "provider RegistryProvider failed" in str(exc_info.value)
+        assert "RuntimeError: https://registry.example.com is unavailable" in str(exc_info.value)
+        [ctx] = provider.contexts
+        assert (ctx.cluster_name, ctx.configured_seeds, ctx.tend_iteration) == ("prod", [], 0)
+
+    def test_refresh_returning_the_wrong_type_fails_construction(self):
+        class BareAddress(SeedCandidateProvider):
+            def refresh_seed_candidates(self, ctx):
+                return "10.0.0.1:3000"
+
+        policy = ClientPolicy()
+        policy.seed_candidate_provider = BareAddress()
+        with pytest.raises(ClientError, match="refresh_seed_candidates returned str, not a list of Host"):
+            new_client_blocking(policy, [])
 
     @pytest.mark.parametrize(
         ("settings", "message"),

@@ -4,12 +4,16 @@
 import _native
 import builtins
 import collections.abc
+import datetime
 import enum
 import typing
 __all__ = [
     "AbortStatus",
     "AdminPolicy",
     "AuthMode",
+    "AwsAddressField",
+    "AwsCredentials",
+    "AwsEc2TagSeedCandidateProvider",
     "BasePolicy",
     "BatchDeleteOp",
     "BatchDeletePolicy",
@@ -112,6 +116,8 @@ __all__ = [
     "ResultCode",
     "Role",
     "Sampler",
+    "SeedCandidateContext",
+    "SeedCandidateProvider",
     "SeedMergePolicy",
     "SelectFlags",
     "ServerError",
@@ -140,7 +146,10 @@ __all__ = [
     "VectorElementType",
     "Version",
     "WritePolicy",
+    "_ConformanceRefresher",
     "_LocalClient",
+    "_conformance_tls_name_matches",
+    "_conformance_translate",
     "geojson",
     "has_any_write_op",
     "new_client",
@@ -154,6 +163,174 @@ class AdminPolicy:
     @timeout.setter
     def timeout(self, value: builtins.int) -> None: ...
     def __new__(cls) -> _native.AdminPolicy: ...
+
+@typing.final
+class AwsCredentials:
+    r"""
+    AWS credentials an :class:`AwsEc2TagSeedCandidateProvider` signs its
+    requests with. Its ``repr`` shows only the access key id.
+
+    Example::
+
+        frozen = boto3.Session().get_credentials().get_frozen_credentials()
+        credentials = AwsCredentials(frozen.access_key, frozen.secret_key, frozen.token)
+    """
+    @property
+    def access_key_id(self) -> builtins.str:
+        r"""
+        The access key id.
+        """
+    @property
+    def expiration(self) -> typing.Optional[datetime.datetime]:
+        r"""
+        When the credentials expire, in UTC, or ``None``.
+        """
+    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __new__(cls, access_key_id: builtins.str, secret_access_key: builtins.str, session_token: typing.Optional[builtins.str] = None, expiration: typing.Optional[datetime.datetime] = None) -> _native.AwsCredentials:
+        r"""
+        Create credentials.
+
+        Args:
+            access_key_id: The access key id.
+            secret_access_key: The secret access key.
+            session_token: The session token of temporary credentials.
+            expiration: When temporary credentials expire, as a
+                timezone-aware datetime. They are used until five minutes
+                before it. ``None`` for credentials that do not expire.
+
+        Returns:
+            AwsCredentials
+
+        Raises:
+            ValueError: If the access key id or the secret is empty.
+        """
+    def __repr__(self) -> builtins.str: ...
+
+@typing.final
+class AwsEc2TagSeedCandidateProvider:
+    r"""
+    Seed candidate provider that returns one host per running EC2 instance
+    matching a set of filters, usually a tag.
+
+    For a self-managed cluster on EC2 whose nodes carry a known tag. It sees
+    only the instances of the credentials' own account and region, so it
+    does not discover Aerospike Cloud nodes. Each refresh sends one signed
+    ``DescribeInstances`` request with *filters* plus
+    ``instance-state-name=running``, and returns one host per instance that
+    has *address_field*, sorted by address. The credentials need only the
+    ``ec2:DescribeInstances`` permission.
+
+    Called at client construction, within *init_timeout*, and again every
+    :attr:`ClientPolicy.discovery_refresh_interval` milliseconds on the
+    cluster tend task, within *timeout*. *timeout* may not exceed
+    :attr:`ClientPolicy.discovery_tend_refresh_deadline`: client
+    construction fails otherwise. A failed refresh keeps the previous seeds.
+
+    Credentials are, in order, the first found of: *credentials*; the
+    ``AWS_ACCESS_KEY_ID``, ``AWS_SECRET_ACCESS_KEY`` and
+    ``AWS_SESSION_TOKEN`` environment variables; the static keys of profile
+    ``AWS_PROFILE`` in the shared credentials file; EKS web identity; ECS
+    container credentials; the EC2 instance profile. For any other source,
+    such as SSO or an assumed role, pass *credentials_hook*.
+
+    Example::
+
+        policy = ClientPolicy()
+        policy.seed_candidate_provider = AwsEc2TagSeedCandidateProvider(
+            "us-east-1", {"tag:aerospike-cluster": ["prod-a"]}
+        )
+        client = await new_client(policy, [Host("aerospike.example.com", 3000)])
+    """
+    @property
+    def region(self) -> builtins.str:
+        r"""
+        The AWS region.
+        """
+    @property
+    def filters(self) -> builtins.dict[builtins.str, builtins.list[builtins.str]]:
+        r"""
+        The ``DescribeInstances`` filters, in configured order.
+        """
+    @property
+    def address_field(self) -> _native.AwsAddressField:
+        r"""
+        The instance field returned as each seed address.
+        """
+    @property
+    def port(self) -> builtins.int:
+        r"""
+        The port given to every host.
+        """
+    @property
+    def tls_name(self) -> typing.Optional[builtins.str]:
+        r"""
+        The TLS name given to every host, or ``None``.
+        """
+    @property
+    def timeout(self) -> builtins.int:
+        r"""
+        Total time in milliseconds for one periodic refresh.
+        """
+    @property
+    def init_timeout(self) -> builtins.int:
+        r"""
+        Total time in milliseconds for the refresh at client construction.
+        """
+    @property
+    def endpoint(self) -> typing.Optional[builtins.str]:
+        r"""
+        The configured EC2 endpoint, or ``None`` for the regional endpoint.
+        """
+    @property
+    def credentials(self) -> typing.Optional[_native.AwsCredentials]:
+        r"""
+        The credentials passed to the constructor, or ``None``.
+        """
+    @property
+    def credentials_hook(self) -> typing.Optional[typing.Any]:
+        r"""
+        The credentials hook passed to the constructor, or ``None``.
+        """
+    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __new__(cls, region: builtins.str, filters: typing.Mapping[builtins.str, typing.Sequence[builtins.str]], address_field: _native.AwsAddressField = _native.AwsAddressField.PRIVATE_IP, port: builtins.int = 3000, tls_name: typing.Optional[builtins.str] = None, timeout: builtins.int = 80, init_timeout: builtins.int = 10000, endpoint: typing.Optional[builtins.str] = None, credentials: typing.Optional[_native.AwsCredentials] = None, credentials_hook: typing.Optional[typing.Any] = None) -> _native.AwsEc2TagSeedCandidateProvider:
+        r"""
+        Create a provider listing the instances in *region* that match
+        *filters*.
+
+        Args:
+            region: AWS region of the instances, such as ``"us-east-1"``.
+            filters: ``DescribeInstances`` filters, each a filter name and
+                its values, at least one. ``tag:<key>`` matches a tag; any
+                other EC2 filter name is passed as given. An instance
+                matches when it matches one value of every filter.
+            address_field: Instance field returned as each seed address.
+            port: Port given to every host.
+            tls_name: TLS name given to every host. ``None`` to default it
+                as for the constructor's seeds.
+            timeout: Total time in milliseconds for one periodic refresh,
+                credentials included.
+            init_timeout: Total time in milliseconds for the refresh at
+                client construction, which also finds the credentials.
+            endpoint: EC2 endpoint URL, such as a VPC interface endpoint.
+                ``None`` for the regional endpoint.
+            credentials: Credentials to use before the rest of the chain.
+            credentials_hook: A callable taking no arguments and returning
+                :class:`AwsCredentials`, replacing the chain. It is called
+                at the first refresh and again when the credentials it
+                returned are within five minutes of their expiration, on
+                the task running the refresh, so its time counts against
+                *timeout*: return credentials refreshed elsewhere, with
+                their expiration, rather than call AWS from the hook.
+
+        Returns:
+            AwsEc2TagSeedCandidateProvider
+
+        Raises:
+            ValueError: If a setting is invalid, or both *credentials* and
+                *credentials_hook* are set; the message names it.
+            TypeError: If *credentials_hook* is not callable.
+        """
+    def __repr__(self) -> builtins.str: ...
 
 class BasePolicy:
     @property
@@ -1771,6 +1948,13 @@ class Client:
         Reads the tended node list (no network I/O), so it is a plain
         method callable from both async and sync code.
         """
+    def _partition_masters(self, namespace: builtins.str) -> typing.Optional[builtins.list[typing.Optional[_native.Node]]]:
+        r"""
+        The master of every partition of `namespace` in the client's
+        partition map, by partition id; ``None`` where no node claims the
+        partition, and ``None`` for the whole map when the namespace is
+        not mapped. Test support for the discovery topology tests, not API.
+        """
     def commit(self, txn: _native.Txn, *, verify_policy: typing.Optional[_native.TxnVerifyPolicy] = None, roll_policy: typing.Optional[_native.TxnRollPolicy] = None) -> typing.Awaitable[CommitStatus]:
         r"""
         Commit a multi-record transaction.
@@ -2102,15 +2286,17 @@ class ClientPolicy:
     @ip_map.setter
     def ip_map(self, value: typing.Optional[dict]) -> None: ...
     @property
-    def seed_candidate_provider(self) -> typing.Optional[_native.StaticSeedCandidateProvider  |  _native.DnsSeedCandidateProvider]:
+    def seed_candidate_provider(self) -> typing.Optional[_native.StaticSeedCandidateProvider  |  _native.DnsSeedCandidateProvider  |  _native.AwsEc2TagSeedCandidateProvider  |  _native.SeedCandidateProvider]:
         r"""
         Source of seed hosts beyond the ones passed to the client
-        constructor, combined with them by :attr:`discovery_merge_policy`.
-        Called at client construction and, for a provider whose seeds can
-        change, every :attr:`discovery_refresh_interval` milliseconds on
-        the cluster tend task. ``None`` (the default) uses the
-        constructor's seeds alone. With a provider set, the constructor
-        accepts an empty seed list.
+        constructor, combined with them by :attr:`discovery_merge_policy`:
+        a :class:`StaticSeedCandidateProvider`, a
+        :class:`DnsSeedCandidateProvider` or a
+        :class:`SeedCandidateProvider` subclass. Called at client
+        construction and, for a provider whose seeds can change, every
+        :attr:`discovery_refresh_interval` milliseconds. ``None`` (the
+        default) uses the constructor's seeds alone. With a provider set,
+        the constructor accepts an empty seed list.
 
         Example::
 
@@ -2121,7 +2307,7 @@ class ClientPolicy:
             client = await new_client(policy, [Host("10.0.0.1", 3000)])
         """
     @seed_candidate_provider.setter
-    def seed_candidate_provider(self, value: typing.Optional[_native.StaticSeedCandidateProvider  |  _native.DnsSeedCandidateProvider]) -> None: ...
+    def seed_candidate_provider(self, value: typing.Optional[_native.StaticSeedCandidateProvider  |  _native.DnsSeedCandidateProvider  |  _native.AwsEc2TagSeedCandidateProvider  |  _native.SeedCandidateProvider]) -> None: ...
     @property
     def address_translator(self) -> typing.Optional[_native.StaticMapAddressTranslator  |  _native.PortMapAddressTranslator  |  _native.PassThroughAddressTranslator]:
         r"""
@@ -2165,6 +2351,21 @@ class ClientPolicy:
         """
     @discovery_refresh_interval.setter
     def discovery_refresh_interval(self, value: builtins.int) -> None: ...
+    @property
+    def discovery_refresh_timeout(self) -> builtins.int:
+        r"""
+        Time in milliseconds one periodic refresh of a
+        :class:`SeedCandidateProvider` subclass may take on its refresh
+        thread. A longer refresh's result is discarded and the previous
+        seeds kept, and :meth:`Client.close` waits at most this long for
+        a refresh in progress before the provider is closed. Default:
+        ``10000``.
+
+        Raises:
+            ValueError: If set to 0.
+        """
+    @discovery_refresh_timeout.setter
+    def discovery_refresh_timeout(self, value: builtins.int) -> None: ...
     @property
     def discovery_tend_refresh_deadline(self) -> builtins.int:
         r"""
@@ -6384,6 +6585,93 @@ class Sampler:
     def __eq__(self, other: object) -> builtins.bool: ...
     def __ne__(self, other: object) -> builtins.bool: ...
 @typing.final
+class SeedCandidateContext:
+    r"""
+    What a :class:`SeedCandidateProvider` is told about the call it answers.
+    """
+    @property
+    def cluster_name(self) -> typing.Optional[builtins.str]:
+        r"""
+        The expected cluster name, :attr:`ClientPolicy.cluster_name`.
+        """
+    @property
+    def configured_seeds(self) -> builtins.list[_native.Host]:
+        r"""
+        The seeds passed to the client constructor.
+        """
+    @property
+    def tend_iteration(self) -> builtins.int:
+        r"""
+        Completed cluster tend iterations when the refresh started: ``0`` at
+        client construction. Informational only.
+        """
+    def __repr__(self) -> builtins.str: ...
+
+class SeedCandidateProvider:
+    r"""
+    Base class for a seed candidate provider written in Python.
+
+    Subclass it and override :meth:`refresh_seed_candidates`. The client
+    calls it once at construction. When :meth:`needs_periodic_refresh`
+    returns ``True``, the client also calls it every
+    :attr:`ClientPolicy.discovery_refresh_interval` milliseconds on a
+    background thread it starts for the provider, never on the cluster tend
+    task, so a refresh may block, on a cloud API call for instance. The tend
+    task uses the latest successful result; a refresh that takes longer than
+    :attr:`ClientPolicy.discovery_refresh_timeout` is discarded.
+
+    Each client calls the provider from one thread at a time, so it needs no
+    locking of its own; a provider shared by several clients is called by
+    each of them.
+
+    Example::
+
+        class RegistryProvider(SeedCandidateProvider):
+            def __init__(self, registry):
+                self.registry = registry
+
+            def refresh_seed_candidates(self, ctx):
+                return [Host(node.ip, 3000) for node in self.registry.lookup("aerospike")]
+
+            def needs_periodic_refresh(self):
+                return True
+
+        policy = ClientPolicy()
+        policy.seed_candidate_provider = RegistryProvider(registry)
+        client = await new_client(policy, [])
+    """
+    def __new__(cls, *_args: typing.Any, **_kwargs: typing.Any) -> _native.SeedCandidateProvider: ...
+    def refresh_seed_candidates(self, ctx: _native.SeedCandidateContext) -> builtins.list[_native.Host]:
+        r"""
+        Returns the current seed hosts.
+
+        Args:
+            ctx: The call's context.
+
+        Returns:
+            The seed hosts, a list of :class:`Host`; possibly empty.
+
+        Raises:
+            Exception: Any exception reports a failure. At construction it is
+                logged and the constructor's seeds are used; with none, the
+                constructor fails with ``ResultCode.SEED_DISCOVERY_FAILED``.
+                On a periodic refresh it is logged and the previous seeds
+                kept.
+        """
+    def needs_periodic_refresh(self) -> builtins.bool:
+        r"""
+        Whether the seeds can change and must be refreshed periodically.
+        Called once per client, at construction. The default, ``False``,
+        calls :meth:`refresh_seed_candidates` only at construction.
+        """
+    def close(self) -> None:
+        r"""
+        Releases the provider's resources. Called once per client, after
+        :meth:`Client.close` and after the last refresh has returned. The
+        default does nothing.
+        """
+
+@typing.final
 class SelectFlags:
     r"""
     Flags controlling the return value of a ``CdtOperation.select_by_path`` operation.
@@ -7666,6 +7954,46 @@ class WritePolicy(_native.BasePolicy):
         """
 
 @typing.final
+class _ConformanceRefresher:
+    r"""
+    Drives a seed candidate provider through the client's own refresh and
+    merge code, one refresh per call, with the policy's merge policy.
+
+    :meth:`initial` is the refresh at client initialization, each
+    :meth:`refresh` a periodic one.
+    """
+    @property
+    def seeds(self) -> builtins.list[_native.Host]:
+        r"""
+        The seed list in effect.
+        """
+    def __new__(cls, policy: _native.ClientPolicy, static_seeds: typing.Sequence[_native.Host]) -> _native._ConformanceRefresher:
+        r"""
+        A refresher over `policy.seed_candidate_provider`.
+
+        Raises ``ValueError`` when the policy has no provider, or has a
+        ``SeedCandidateProvider`` subclass: that answers periodic refreshes
+        from its own thread, so it cannot be driven one refresh at a time.
+        """
+    @staticmethod
+    def scripted(policy: _native.ClientPolicy, results: typing.Sequence[typing.Sequence[_native.Host]], static_seeds: typing.Sequence[_native.Host]) -> _native._ConformanceRefresher:
+        r"""
+        A refresher over a provider that returns `results` in order, one per
+        refresh, starting with :meth:`initial`.
+        """
+    def initial(self) -> tuple[typing.Optional[builtins.list[_native.Host]], typing.Optional[builtins.BaseException], builtins.list[_native.Host]]:
+        r"""
+        The refresh at client initialization: the provider's hosts or error,
+        and the seed list it establishes.
+        """
+    def refresh(self) -> tuple[typing.Optional[builtins.list[_native.Host]], typing.Optional[builtins.BaseException], builtins.list[_native.Host]]:
+        r"""
+        One periodic refresh: the provider's hosts or error, and the seed
+        list in effect afterwards, the previous one when the refresh
+        published nothing.
+        """
+
+@typing.final
 class _LocalClient:
     r"""
     Sync-only Aerospike client that owns a per-thread `current_thread`
@@ -7778,6 +8106,37 @@ class AuthMode(enum.Enum):
     Allows authentication and authorization based on a certificate. No user name or
     password needs to be configured. Requires TLS and a client certificate.
     Requires server version 5.7.0+
+    """
+
+@typing.final
+class AwsAddressField(enum.Enum):
+    r"""
+    EC2 instance field an :class:`AwsEc2TagSeedCandidateProvider` returns
+    as each seed address.
+
+    Example::
+
+        provider = AwsEc2TagSeedCandidateProvider(
+            "us-east-1",
+            {"tag:aerospike-cluster": ["prod-a"]},
+            address_field=AwsAddressField.PRIVATE_DNS,
+        )
+    """
+    PRIVATE_IP = ...
+    r"""
+    The primary private IPv4 address. The default.
+    """
+    PUBLIC_IP = ...
+    r"""
+    The public IPv4 address.
+    """
+    PRIVATE_DNS = ...
+    r"""
+    The private DNS name.
+    """
+    PUBLIC_DNS = ...
+    r"""
+    The public DNS name.
     """
 
 @typing.final
@@ -8613,6 +8972,21 @@ class VectorElementType(enum.Enum):
     FLOAT64 = ...
     r"""
     64-bit IEEE 754 double.
+    """
+
+def _conformance_tls_name_matches(certificate: bytes, tls_name: builtins.str) -> builtins.bool:
+    r"""
+    Whether the PEM `certificate`'s subject alternative names match
+    `tls_name`, as the TLS handshake checks them. A `tls_name` that is not a
+    DNS name or an IP address matches nothing.
+    """
+
+def _conformance_translate(policy: _native.ClientPolicy, node_name: builtins.str, host: builtins.str, port: builtins.int, tls_name: typing.Optional[builtins.str] = None, alternate: builtins.bool = False) -> _native.Host:
+    r"""
+    Translates an advertised address with the translator and miss mode a
+    client built from `policy` uses.
+
+    Raises the client's translation-miss error on a strict miss.
     """
 
 def geojson(geo_str: builtins.str) -> _native.GeoJSON:

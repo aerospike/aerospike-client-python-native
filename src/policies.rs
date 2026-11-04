@@ -14,6 +14,7 @@
 // the License.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use pyo3::types::PyDict;
 use pyo3::prelude::*;
@@ -2319,10 +2320,30 @@ use crate::TlsConfig;
         /// cross-loop scheduler contention under AsyncPool. `None` or
         /// `Some(0)` = use the global runtime (default).
         pub(crate) per_client_runtime_workers: Option<usize>,
-        // The Python objects behind `_as.seed_candidate_provider` and
-        // `_as.address_translator`, which core holds only as trait objects.
-        seed_candidate_provider: Option<SeedProvider>,
+        // The Python objects behind `_as.address_translator`, which core
+        // holds only as a trait object, and the seed provider, which
+        // `core_policy` hands to each client.
+        pub(crate) seed_candidate_provider: Option<SeedProvider>,
         address_translator: Option<Translator>,
+        discovery_refresh_timeout: u32,
+    }
+
+    impl ClientPolicy {
+        /// The core policy one client is constructed with. A Python seed
+        /// provider gets an adapter per client, holding that client's
+        /// refresh thread.
+        pub(crate) fn core_policy(&self, py: Python<'_>) -> PyResult<aerospike_core::ClientPolicy> {
+            let mut policy = self._as.clone();
+            policy.seed_candidate_provider = match &self.seed_candidate_provider {
+                Some(provider) => Some(provider.to_core(
+                    py,
+                    Duration::from_millis(u64::from(policy.discovery_refresh_interval)),
+                    Duration::from_millis(u64::from(self.discovery_refresh_timeout)),
+                )?),
+                None => None,
+            };
+            Ok(policy)
+        }
     }
 
     #[gen_stub_pymethods]
@@ -2349,6 +2370,7 @@ use crate::TlsConfig;
                 per_client_runtime_workers: None,
                 seed_candidate_provider: None,
                 address_translator: None,
+                discovery_refresh_timeout: 10_000,
             };
 
             Ok(res)
@@ -2827,12 +2849,14 @@ use crate::TlsConfig;
         }
 
         /// Source of seed hosts beyond the ones passed to the client
-        /// constructor, combined with them by :attr:`discovery_merge_policy`.
-        /// Called at client construction and, for a provider whose seeds can
-        /// change, every :attr:`discovery_refresh_interval` milliseconds on
-        /// the cluster tend task. ``None`` (the default) uses the
-        /// constructor's seeds alone. With a provider set, the constructor
-        /// accepts an empty seed list.
+        /// constructor, combined with them by :attr:`discovery_merge_policy`:
+        /// a :class:`StaticSeedCandidateProvider`, a
+        /// :class:`DnsSeedCandidateProvider` or a
+        /// :class:`SeedCandidateProvider` subclass. Called at client
+        /// construction and, for a provider whose seeds can change, every
+        /// :attr:`discovery_refresh_interval` milliseconds. ``None`` (the
+        /// default) uses the constructor's seeds alone. With a provider set,
+        /// the constructor accepts an empty seed list.
         ///
         /// Example::
         ///
@@ -2848,7 +2872,6 @@ use crate::TlsConfig;
 
         #[setter]
         pub fn set_seed_candidate_provider(&mut self, value: Option<SeedProvider>) {
-            self._as.seed_candidate_provider = value.as_ref().map(SeedProvider::to_core);
             self.seed_candidate_provider = value;
         }
 
@@ -2910,6 +2933,31 @@ use crate::TlsConfig;
         #[setter]
         pub fn set_discovery_refresh_interval(&mut self, interval_millis: u32) {
             self._as.discovery_refresh_interval = interval_millis;
+        }
+
+        /// Time in milliseconds one periodic refresh of a
+        /// :class:`SeedCandidateProvider` subclass may take on its refresh
+        /// thread. A longer refresh's result is discarded and the previous
+        /// seeds kept, and :meth:`Client.close` waits at most this long for
+        /// a refresh in progress before the provider is closed. Default:
+        /// ``10000``.
+        ///
+        /// Raises:
+        ///     ValueError: If set to 0.
+        #[getter]
+        pub fn get_discovery_refresh_timeout(&self) -> u32 {
+            self.discovery_refresh_timeout
+        }
+
+        #[setter]
+        pub fn set_discovery_refresh_timeout(&mut self, timeout_millis: u32) -> PyResult<()> {
+            if timeout_millis == 0 {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "discovery_refresh_timeout must be greater than 0",
+                ));
+            }
+            self.discovery_refresh_timeout = timeout_millis;
+            Ok(())
         }
 
         /// Time in milliseconds one periodic seed refresh may take on the

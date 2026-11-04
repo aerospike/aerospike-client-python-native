@@ -271,14 +271,31 @@ fn capture_sub_error(e: &Error) -> SubErrorData {
     }
 }
 
+// One link of a cause chain. `Display` renders the whole chain beneath an
+// error, which `__cause__` already carries, so a link keeps its first line.
+fn capture_cause(e: &Error) -> SubErrorData {
+    let mut data = capture_sub_error(e);
+    if let Some(end) = data.message.find('\n') {
+        data.message.truncate(end);
+    }
+    data
+}
+
+// `first` and every error beneath it, outermost first.
+fn capture_causes(first: Option<&Error>) -> Vec<SubErrorData> {
+    std::iter::successors(first, |e| e.cause()).map(capture_cause).collect()
+}
+
 // Retry/diagnostic context shared by the server and client error paths:
 // where the command failed (node), how many attempts it took (iteration),
-// the undecorated message, and the errors of prior attempts.
+// the undecorated message, the errors of prior attempts, and the cause
+// chain of the final one.
 struct RetryContext {
     node: Option<String>,
     iteration: Option<u32>,
     base_message: String,
     subs: Vec<SubErrorData>,
+    causes: Vec<SubErrorData>,
 }
 
 fn capture_retry_context(err: &Error) -> RetryContext {
@@ -287,6 +304,7 @@ fn capture_retry_context(err: &Error) -> RetryContext {
         iteration: err.iteration(),
         base_message: err.base_message(),
         subs: err.sub_errors().iter().map(capture_sub_error).collect(),
+        causes: capture_causes(err.cause()),
     }
 }
 
@@ -350,6 +368,23 @@ fn materialize_sub_exceptions(
         .map(|list| list.into_any().unbind())
 }
 
+// Chain `causes` onto `obj` through `__cause__`, so `except` handlers and
+// tracebacks reach the failure a retry or wrapper reported over, such as a
+// circuit-breaker refusal under MAX_RETRIES_EXCEEDED.
+fn attach_causes(py: Python<'_>, obj: &Bound<'_, PyAny>, causes: &[SubErrorData]) {
+    let mut cause: Option<Py<PyAny>> = None;
+    for data in causes.iter().rev() {
+        let exc = materialize_sub_error(py, data);
+        if let Some(inner) = cause.take() {
+            let _ = exc.bind(py).setattr("__cause__", inner);
+        }
+        cause = Some(exc);
+    }
+    if let Some(cause) = cause {
+        let _ = obj.setattr("__cause__", cause);
+    }
+}
+
 impl PyErrArguments for ServerErrorArgs {
     // Runs when the PyErr is first materialized — for async completions that is
     // on the event-loop/drainer thread inside `set_exception`, never on a Tokio
@@ -376,7 +411,10 @@ impl PyErrArguments for ServerErrorArgs {
             Some(self.ctx.base_message),
             sub_exceptions,
         )) {
-            Ok(obj) => obj.unbind(),
+            Ok(obj) => {
+                attach_causes(py, &obj, &self.ctx.causes);
+                obj.unbind()
+            }
             // Construction failed — surface that failure's own exception value.
             Err(e) => e.into_value(py).into_any(),
         }
@@ -450,6 +488,7 @@ impl<T: PyTypeInfo + 'static> PyErrArguments for RetryCtxArgs<T> {
                 if let Some(subs) = materialize_sub_exceptions(py, &self.ctx.subs) {
                     let _ = obj.setattr("sub_exceptions", subs);
                 }
+                attach_causes(py, &obj, &self.ctx.causes);
                 obj.unbind()
             }
             // Construction failed — surface that failure's own exception value.
@@ -488,6 +527,7 @@ impl PyErrArguments for BatchFailedArgs {
                 if let Some(subs) = materialize_sub_exceptions(py, &self.ctx.subs) {
                     let _ = obj.setattr("sub_exceptions", subs);
                 }
+                attach_causes(py, &obj, &self.ctx.causes);
                 let rows: Vec<Py<PyAny>> = self
                     .records
                     .into_iter()
@@ -542,6 +582,7 @@ impl PyErrArguments for CommitFailedArgs {
                 if let Some(subs) = materialize_sub_exceptions(py, &self.ctx.subs) {
                     let _ = obj.setattr("sub_exceptions", subs);
                 }
+                attach_causes(py, &obj, &self.ctx.causes);
                 let rc = match self.cause_result_code {
                     Some(rc) => ResultCode::from(rc),
                     None => ResultCode::from_i32(self.result_code),
@@ -673,6 +714,7 @@ pub(crate) fn batch_failed_error(
         iteration: None,
         base_message,
         subs: Vec::new(),
+        causes: capture_causes(Some(&source)),
     };
     if let Some(server_rc) = source.server_result_code() {
         let detail = source.server_error_detail();

@@ -294,6 +294,19 @@ class TestNodes(TestFixtureConnection):
         total_records = records_per_node * len(nodes)
         assert total_records >= records_per_node, "Should have at least records_per_node records"
 
+    async def test_partition_masters_names_a_known_node_per_partition(self, client):
+        """Every partition of a mapped namespace has a master the client knows."""
+        names = set(client.node_names())
+        masters = client._partition_masters("test")
+
+        assert len(masters) == 4096
+        assert {m.name for m in masters if m is not None} <= names
+        assert any(m is not None for m in masters)
+
+    async def test_partition_masters_of_unmapped_namespace_is_none(self, client):
+        """A namespace the cluster does not serve has no partition map."""
+        assert client._partition_masters("no_such_namespace_xyz") is None
+
 
 class TestNodeErrorCases(TestFixtureConnection):
     """Test error handling for Node and related methods."""

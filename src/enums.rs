@@ -1841,6 +1841,59 @@ pub enum Concurrency {
         }
     }
 
+    /// EC2 instance field an :class:`AwsEc2TagSeedCandidateProvider` returns
+    /// as each seed address.
+    ///
+    /// Example::
+    ///
+    ///     provider = AwsEc2TagSeedCandidateProvider(
+    ///         "us-east-1",
+    ///         {"tag:aerospike-cluster": ["prod-a"]},
+    ///         address_field=AwsAddressField.PRIVATE_DNS,
+    ///     )
+    #[cfg(feature = "discovery-aws")]
+    #[gen_stub_pyclass_enum(module = "_native")]
+    #[pyclass(from_py_object, module = "_native")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum AwsAddressField {
+        /// The primary private IPv4 address. The default.
+        #[pyo3(name = "PRIVATE_IP")]
+        PrivateIp,
+        /// The public IPv4 address.
+        #[pyo3(name = "PUBLIC_IP")]
+        PublicIp,
+        /// The private DNS name.
+        #[pyo3(name = "PRIVATE_DNS")]
+        PrivateDns,
+        /// The public DNS name.
+        #[pyo3(name = "PUBLIC_DNS")]
+        PublicDns,
+    }
+
+    #[cfg(feature = "discovery-aws")]
+    impl From<AwsAddressField> for aerospike_core::discovery::aws::AddressField {
+        fn from(input: AwsAddressField) -> Self {
+            match input {
+                AwsAddressField::PrivateIp => Self::PrivateIp,
+                AwsAddressField::PublicIp => Self::PublicIp,
+                AwsAddressField::PrivateDns => Self::PrivateDns,
+                AwsAddressField::PublicDns => Self::PublicDns,
+            }
+        }
+    }
+
+    #[cfg(feature = "discovery-aws")]
+    impl From<aerospike_core::discovery::aws::AddressField> for AwsAddressField {
+        fn from(input: aerospike_core::discovery::aws::AddressField) -> Self {
+            match input {
+                aerospike_core::discovery::aws::AddressField::PrivateIp => Self::PrivateIp,
+                aerospike_core::discovery::aws::AddressField::PublicIp => Self::PublicIp,
+                aerospike_core::discovery::aws::AddressField::PrivateDns => Self::PrivateDns,
+                aerospike_core::discovery::aws::AddressField::PublicDns => Self::PublicDns,
+            }
+        }
+    }
+
     macro_rules! impl_simple_enum_eq_hash {
         ($($ty:ty),*) => {$(
             #[pymethods]
@@ -1867,3 +1920,5 @@ pub enum Concurrency {
     }
 
     impl_simple_enum_eq_hash!(BinDataType, Order, TranslationMissMode, SeedMergePolicy, DnsRecordType);
+    #[cfg(feature = "discovery-aws")]
+    impl_simple_enum_eq_hash!(AwsAddressField);
