@@ -144,6 +144,23 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
             }
         }
 
+        /// Rejects an empty seed list unless `policy` has a seed candidate
+        /// provider to supply the seeds. With neither, the core raises a
+        /// connection error that does not say why, or, with
+        /// `fail_if_not_connected` off, returns a client that can never
+        /// reach a node.
+        pub(crate) fn check(&self, policy: &aerospike_core::ClientPolicy) -> PyResult<()> {
+            match self {
+                Seeds::Hosts(hosts) if hosts.is_empty() && policy.seed_candidate_provider.is_none() => {
+                    Err(PyValueError::new_err(
+                        "seeds must contain at least one Host when \
+                         ClientPolicy.seed_candidate_provider is not set",
+                    ))
+                }
+                _ => Ok(()),
+            }
+        }
+
         /// Seed-string form, as reported by :meth:`Client.seeds`.
         pub(crate) fn to_seed_string(&self) -> String {
             match self {
@@ -165,12 +182,6 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
             let hosts: Vec<Host> = obj.extract().map_err(|_| {
                 PyTypeError::new_err("seeds must be a str or a sequence of Host")
             })?;
-            // With no seeds the core raises a connection error that does not
-            // say why, or, with `fail_if_not_connected` off, returns a client
-            // that can never reach a node.
-            if hosts.is_empty() {
-                return Err(PyValueError::new_err("seeds must contain at least one Host"));
-            }
             Ok(Seeds::Hosts(hosts.into_iter().map(|host| host._as).collect()))
         }
     }

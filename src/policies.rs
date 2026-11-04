@@ -14,6 +14,7 @@
 // the License.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use pyo3::types::PyDict;
 use pyo3::prelude::*;
@@ -22,6 +23,7 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 
 
 
+use crate::discovery::{SeedProvider, Translator};
 use crate::enums::*;
 use crate::expressions::FilterExpression;
 use crate::operations::{extract_py_ops_with_ctx, OpWithCtx, OperationType};
@@ -2318,6 +2320,30 @@ use crate::TlsConfig;
         /// cross-loop scheduler contention under AsyncPool. `None` or
         /// `Some(0)` = use the global runtime (default).
         pub(crate) per_client_runtime_workers: Option<usize>,
+        // The Python objects behind `_as.address_translator`, which core
+        // holds only as a trait object, and the seed provider, which
+        // `core_policy` hands to each client.
+        pub(crate) seed_candidate_provider: Option<SeedProvider>,
+        address_translator: Option<Translator>,
+        discovery_refresh_timeout: u32,
+    }
+
+    impl ClientPolicy {
+        /// The core policy one client is constructed with. A Python seed
+        /// provider gets an adapter per client, holding that client's
+        /// refresh thread.
+        pub(crate) fn core_policy(&self, py: Python<'_>) -> PyResult<aerospike_core::ClientPolicy> {
+            let mut policy = self._as.clone();
+            policy.seed_candidate_provider = match &self.seed_candidate_provider {
+                Some(provider) => Some(provider.to_core(
+                    py,
+                    Duration::from_millis(u64::from(policy.discovery_refresh_interval)),
+                    Duration::from_millis(u64::from(self.discovery_refresh_timeout)),
+                )?),
+                None => None,
+            };
+            Ok(policy)
+        }
     }
 
     #[gen_stub_pymethods]
@@ -2342,6 +2368,9 @@ use crate::TlsConfig;
                     ..Default::default()
                 },
                 per_client_runtime_workers: None,
+                seed_candidate_provider: None,
+                address_translator: None,
+                discovery_refresh_timeout: 10_000,
             };
 
             Ok(res)
@@ -2785,6 +2814,7 @@ use crate::TlsConfig;
         /// network. Default is no translation.
         /// The key is the IP address returned from friend info requests to other servers.
         /// The value is the real IP address used to connect to the server.
+        /// Ignored when :attr:`address_translator` is set.
         #[getter]
         pub fn get_ip_map(&self, py: Python) -> PyResult<Py<PyAny>> {
             match &self._as.ip_map {
@@ -2816,6 +2846,136 @@ use crate::TlsConfig;
                 }
             }
             Ok(())
+        }
+
+        /// Source of seed hosts beyond the ones passed to the client
+        /// constructor, combined with them by :attr:`discovery_merge_policy`:
+        /// a :class:`StaticSeedCandidateProvider`, a
+        /// :class:`DnsSeedCandidateProvider` or a
+        /// :class:`SeedCandidateProvider` subclass. Called at client
+        /// construction and, for a provider whose seeds can change, every
+        /// :attr:`discovery_refresh_interval` milliseconds. ``None`` (the
+        /// default) uses the constructor's seeds alone. With a provider set,
+        /// the constructor accepts an empty seed list.
+        ///
+        /// Example::
+        ///
+        ///     policy = ClientPolicy()
+        ///     policy.seed_candidate_provider = DnsSeedCandidateProvider(
+        ///         ["aerospike.prod.example.com"]
+        ///     )
+        ///     client = await new_client(policy, [Host("10.0.0.1", 3000)])
+        #[getter]
+        pub fn get_seed_candidate_provider(&self) -> Option<SeedProvider> {
+            self.seed_candidate_provider.clone()
+        }
+
+        #[setter]
+        pub fn set_seed_candidate_provider(&mut self, value: Option<SeedProvider>) {
+            self.seed_candidate_provider = value;
+        }
+
+        /// Translator applied to every address a server advertises for a
+        /// peer before the client connects to it. When set, :attr:`ip_map` is
+        /// ignored. ``None`` (the default) translates through
+        /// :attr:`ip_map`. A translator never rewrites the TLS name.
+        ///
+        /// Example::
+        ///
+        ///     policy = ClientPolicy()
+        ///     policy.address_translator = PortMapAddressTranslator(
+        ///         {"10.0.0.1:3000": "lb.example.com:30001"}
+        ///     )
+        #[getter]
+        pub fn get_address_translator(&self) -> Option<Translator> {
+            self.address_translator.clone()
+        }
+
+        #[setter]
+        pub fn set_address_translator(&mut self, value: Option<Translator>) {
+            self._as.address_translator = value.as_ref().map(Translator::to_core);
+            self.address_translator = value;
+        }
+
+        /// What happens when the address translator has no mapping for an
+        /// advertised address. Default: ``TranslationMissMode.PASS_THROUGH``.
+        #[getter]
+        pub fn get_translation_on_miss(&self) -> TranslationMissMode {
+            self._as.translation_on_miss.into()
+        }
+
+        #[setter]
+        pub fn set_translation_on_miss(&mut self, value: TranslationMissMode) {
+            self._as.translation_on_miss = value.into();
+        }
+
+        /// How the constructor's seeds and the provider's seeds are combined.
+        /// Default: ``SeedMergePolicy.MERGE``.
+        #[getter]
+        pub fn get_discovery_merge_policy(&self) -> SeedMergePolicy {
+            self._as.discovery_merge_policy.into()
+        }
+
+        #[setter]
+        pub fn set_discovery_merge_policy(&mut self, value: SeedMergePolicy) {
+            self._as.discovery_merge_policy = value.into();
+        }
+
+        /// Interval in milliseconds between refreshes of a seed candidate
+        /// provider whose seeds can change. Must be at least
+        /// :attr:`tend_interval`; client construction fails otherwise.
+        /// Default: ``30000``.
+        #[getter]
+        pub fn get_discovery_refresh_interval(&self) -> u32 {
+            self._as.discovery_refresh_interval
+        }
+
+        #[setter]
+        pub fn set_discovery_refresh_interval(&mut self, interval_millis: u32) {
+            self._as.discovery_refresh_interval = interval_millis;
+        }
+
+        /// Time in milliseconds one periodic refresh of a
+        /// :class:`SeedCandidateProvider` subclass may take on its refresh
+        /// thread. A longer refresh's result is discarded and the previous
+        /// seeds kept, and :meth:`Client.close` waits at most this long for
+        /// a refresh in progress before the provider is closed. Default:
+        /// ``10000``.
+        ///
+        /// Raises:
+        ///     ValueError: If set to 0.
+        #[getter]
+        pub fn get_discovery_refresh_timeout(&self) -> u32 {
+            self.discovery_refresh_timeout
+        }
+
+        #[setter]
+        pub fn set_discovery_refresh_timeout(&mut self, timeout_millis: u32) -> PyResult<()> {
+            if timeout_millis == 0 {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "discovery_refresh_timeout must be greater than 0",
+                ));
+            }
+            self.discovery_refresh_timeout = timeout_millis;
+            Ok(())
+        }
+
+        /// Time in milliseconds one periodic seed refresh may take on the
+        /// cluster tend task. A refresh still running at the deadline is
+        /// cancelled and the previous seeds kept; after three consecutive
+        /// overruns the provider is no longer called and the seeds of client
+        /// construction are restored. Must be greater than 0 and at most
+        /// half of :attr:`tend_interval`, and a provider's own timeout may
+        /// not exceed it; client construction fails otherwise. Default:
+        /// ``100``.
+        #[getter]
+        pub fn get_discovery_tend_refresh_deadline(&self) -> u32 {
+            self._as.discovery_tend_refresh_deadline
+        }
+
+        #[setter]
+        pub fn set_discovery_tend_refresh_deadline(&mut self, deadline_millis: u32) {
+            self._as.discovery_tend_refresh_deadline = deadline_millis;
         }
 
         /// Expected cluster name. It not `None`, server nodes must return this cluster name in order

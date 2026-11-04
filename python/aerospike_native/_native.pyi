@@ -4,12 +4,16 @@
 import _native
 import builtins
 import collections.abc
+import datetime
 import enum
 import typing
 __all__ = [
     "AbortStatus",
     "AdminPolicy",
     "AuthMode",
+    "AwsAddressField",
+    "AwsCredentials",
+    "AwsEc2TagSeedCandidateProvider",
     "BasePolicy",
     "BatchDeleteOp",
     "BatchDeletePolicy",
@@ -41,6 +45,8 @@ __all__ = [
     "CommitLevel",
     "CommitStatus",
     "Concurrency",
+    "DnsRecordType",
+    "DnsSeedCandidateProvider",
     "DropIndexTask",
     "ErrorDetailVerbosity",
     "ExecuteTask",
@@ -89,6 +95,8 @@ __all__ = [
     "OrderBy",
     "PartitionFilter",
     "PartitionStatus",
+    "PassThroughAddressTranslator",
+    "PortMapAddressTranslator",
     "Privilege",
     "PrivilegeCode",
     "QueryDuration",
@@ -108,11 +116,16 @@ __all__ = [
     "ResultCode",
     "Role",
     "Sampler",
+    "SeedCandidateContext",
+    "SeedCandidateProvider",
+    "SeedMergePolicy",
     "SelectFlags",
     "ServerError",
     "SortedMap",
     "SpecialValue",
     "Statement",
+    "StaticMapAddressTranslator",
+    "StaticSeedCandidateProvider",
     "StringNumericType",
     "StringOperation",
     "StringRegexFlags",
@@ -120,6 +133,7 @@ __all__ = [
     "SubCode",
     "TaskStatus",
     "TlsConfig",
+    "TranslationMissMode",
     "Txn",
     "TxnRollPolicy",
     "TxnState",
@@ -132,7 +146,10 @@ __all__ = [
     "VectorElementType",
     "Version",
     "WritePolicy",
+    "_ConformanceRefresher",
     "_LocalClient",
+    "_conformance_tls_name_matches",
+    "_conformance_translate",
     "geojson",
     "has_any_write_op",
     "new_client",
@@ -146,6 +163,174 @@ class AdminPolicy:
     @timeout.setter
     def timeout(self, value: builtins.int) -> None: ...
     def __new__(cls) -> _native.AdminPolicy: ...
+
+@typing.final
+class AwsCredentials:
+    r"""
+    AWS credentials an :class:`AwsEc2TagSeedCandidateProvider` signs its
+    requests with. Its ``repr`` shows only the access key id.
+
+    Example::
+
+        frozen = boto3.Session().get_credentials().get_frozen_credentials()
+        credentials = AwsCredentials(frozen.access_key, frozen.secret_key, frozen.token)
+    """
+    @property
+    def access_key_id(self) -> builtins.str:
+        r"""
+        The access key id.
+        """
+    @property
+    def expiration(self) -> typing.Optional[datetime.datetime]:
+        r"""
+        When the credentials expire, in UTC, or ``None``.
+        """
+    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __new__(cls, access_key_id: builtins.str, secret_access_key: builtins.str, session_token: typing.Optional[builtins.str] = None, expiration: typing.Optional[datetime.datetime] = None) -> _native.AwsCredentials:
+        r"""
+        Create credentials.
+
+        Args:
+            access_key_id: The access key id.
+            secret_access_key: The secret access key.
+            session_token: The session token of temporary credentials.
+            expiration: When temporary credentials expire, as a
+                timezone-aware datetime. They are used until five minutes
+                before it. ``None`` for credentials that do not expire.
+
+        Returns:
+            AwsCredentials
+
+        Raises:
+            ValueError: If the access key id or the secret is empty.
+        """
+    def __repr__(self) -> builtins.str: ...
+
+@typing.final
+class AwsEc2TagSeedCandidateProvider:
+    r"""
+    Seed candidate provider that returns one host per running EC2 instance
+    matching a set of filters, usually a tag.
+
+    For a self-managed cluster on EC2 whose nodes carry a known tag. It sees
+    only the instances of the credentials' own account and region, so it
+    does not discover Aerospike Cloud nodes. Each refresh sends one signed
+    ``DescribeInstances`` request with *filters* plus
+    ``instance-state-name=running``, and returns one host per instance that
+    has *address_field*, sorted by address. The credentials need only the
+    ``ec2:DescribeInstances`` permission.
+
+    Called at client construction, within *init_timeout*, and again every
+    :attr:`ClientPolicy.discovery_refresh_interval` milliseconds on the
+    cluster tend task, within *timeout*. *timeout* may not exceed
+    :attr:`ClientPolicy.discovery_tend_refresh_deadline`: client
+    construction fails otherwise. A failed refresh keeps the previous seeds.
+
+    Credentials are, in order, the first found of: *credentials*; the
+    ``AWS_ACCESS_KEY_ID``, ``AWS_SECRET_ACCESS_KEY`` and
+    ``AWS_SESSION_TOKEN`` environment variables; the static keys of profile
+    ``AWS_PROFILE`` in the shared credentials file; EKS web identity; ECS
+    container credentials; the EC2 instance profile. For any other source,
+    such as SSO or an assumed role, pass *credentials_hook*.
+
+    Example::
+
+        policy = ClientPolicy()
+        policy.seed_candidate_provider = AwsEc2TagSeedCandidateProvider(
+            "us-east-1", {"tag:aerospike-cluster": ["prod-a"]}
+        )
+        client = await new_client(policy, [Host("aerospike.example.com", 3000)])
+    """
+    @property
+    def region(self) -> builtins.str:
+        r"""
+        The AWS region.
+        """
+    @property
+    def filters(self) -> builtins.dict[builtins.str, builtins.list[builtins.str]]:
+        r"""
+        The ``DescribeInstances`` filters, in configured order.
+        """
+    @property
+    def address_field(self) -> _native.AwsAddressField:
+        r"""
+        The instance field returned as each seed address.
+        """
+    @property
+    def port(self) -> builtins.int:
+        r"""
+        The port given to every host.
+        """
+    @property
+    def tls_name(self) -> typing.Optional[builtins.str]:
+        r"""
+        The TLS name given to every host, or ``None``.
+        """
+    @property
+    def timeout(self) -> builtins.int:
+        r"""
+        Total time in milliseconds for one periodic refresh.
+        """
+    @property
+    def init_timeout(self) -> builtins.int:
+        r"""
+        Total time in milliseconds for the refresh at client construction.
+        """
+    @property
+    def endpoint(self) -> typing.Optional[builtins.str]:
+        r"""
+        The configured EC2 endpoint, or ``None`` for the regional endpoint.
+        """
+    @property
+    def credentials(self) -> typing.Optional[_native.AwsCredentials]:
+        r"""
+        The credentials passed to the constructor, or ``None``.
+        """
+    @property
+    def credentials_hook(self) -> typing.Optional[typing.Any]:
+        r"""
+        The credentials hook passed to the constructor, or ``None``.
+        """
+    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __new__(cls, region: builtins.str, filters: typing.Mapping[builtins.str, typing.Sequence[builtins.str]], address_field: _native.AwsAddressField = _native.AwsAddressField.PRIVATE_IP, port: builtins.int = 3000, tls_name: typing.Optional[builtins.str] = None, timeout: builtins.int = 80, init_timeout: builtins.int = 10000, endpoint: typing.Optional[builtins.str] = None, credentials: typing.Optional[_native.AwsCredentials] = None, credentials_hook: typing.Optional[typing.Any] = None) -> _native.AwsEc2TagSeedCandidateProvider:
+        r"""
+        Create a provider listing the instances in *region* that match
+        *filters*.
+
+        Args:
+            region: AWS region of the instances, such as ``"us-east-1"``.
+            filters: ``DescribeInstances`` filters, each a filter name and
+                its values, at least one. ``tag:<key>`` matches a tag; any
+                other EC2 filter name is passed as given. An instance
+                matches when it matches one value of every filter.
+            address_field: Instance field returned as each seed address.
+            port: Port given to every host.
+            tls_name: TLS name given to every host. ``None`` to default it
+                as for the constructor's seeds.
+            timeout: Total time in milliseconds for one periodic refresh,
+                credentials included.
+            init_timeout: Total time in milliseconds for the refresh at
+                client construction, which also finds the credentials.
+            endpoint: EC2 endpoint URL, such as a VPC interface endpoint.
+                ``None`` for the regional endpoint.
+            credentials: Credentials to use before the rest of the chain.
+            credentials_hook: A callable taking no arguments and returning
+                :class:`AwsCredentials`, replacing the chain. It is called
+                at the first refresh and again when the credentials it
+                returned are within five minutes of their expiration, on
+                the task running the refresh, so its time counts against
+                *timeout*: return credentials refreshed elsewhere, with
+                their expiration, rather than call AWS from the hook.
+
+        Returns:
+            AwsEc2TagSeedCandidateProvider
+
+        Raises:
+            ValueError: If a setting is invalid, or both *credentials* and
+                *credentials_hook* are set; the message names it.
+            TypeError: If *credentials_hook* is not callable.
+        """
+    def __repr__(self) -> builtins.str: ...
 
 class BasePolicy:
     @property
@@ -1763,6 +1948,13 @@ class Client:
         Reads the tended node list (no network I/O), so it is a plain
         method callable from both async and sync code.
         """
+    def _partition_masters(self, namespace: builtins.str) -> typing.Optional[builtins.list[typing.Optional[_native.Node]]]:
+        r"""
+        The master of every partition of `namespace` in the client's
+        partition map, by partition id; ``None`` where no node claims the
+        partition, and ``None`` for the whole map when the namespace is
+        not mapped. Test support for the discovery topology tests, not API.
+        """
     def commit(self, txn: _native.Txn, *, verify_policy: typing.Optional[_native.TxnVerifyPolicy] = None, roll_policy: typing.Optional[_native.TxnRollPolicy] = None) -> typing.Awaitable[CommitStatus]:
         r"""
         Commit a multi-record transaction.
@@ -2089,9 +2281,105 @@ class ClientPolicy:
         network. Default is no translation.
         The key is the IP address returned from friend info requests to other servers.
         The value is the real IP address used to connect to the server.
+        Ignored when :attr:`address_translator` is set.
         """
     @ip_map.setter
     def ip_map(self, value: typing.Optional[dict]) -> None: ...
+    @property
+    def seed_candidate_provider(self) -> typing.Optional[_native.StaticSeedCandidateProvider  |  _native.DnsSeedCandidateProvider  |  _native.AwsEc2TagSeedCandidateProvider  |  _native.SeedCandidateProvider]:
+        r"""
+        Source of seed hosts beyond the ones passed to the client
+        constructor, combined with them by :attr:`discovery_merge_policy`:
+        a :class:`StaticSeedCandidateProvider`, a
+        :class:`DnsSeedCandidateProvider` or a
+        :class:`SeedCandidateProvider` subclass. Called at client
+        construction and, for a provider whose seeds can change, every
+        :attr:`discovery_refresh_interval` milliseconds. ``None`` (the
+        default) uses the constructor's seeds alone. With a provider set,
+        the constructor accepts an empty seed list.
+
+        Example::
+
+            policy = ClientPolicy()
+            policy.seed_candidate_provider = DnsSeedCandidateProvider(
+                ["aerospike.prod.example.com"]
+            )
+            client = await new_client(policy, [Host("10.0.0.1", 3000)])
+        """
+    @seed_candidate_provider.setter
+    def seed_candidate_provider(self, value: typing.Optional[_native.StaticSeedCandidateProvider  |  _native.DnsSeedCandidateProvider  |  _native.AwsEc2TagSeedCandidateProvider  |  _native.SeedCandidateProvider]) -> None: ...
+    @property
+    def address_translator(self) -> typing.Optional[_native.StaticMapAddressTranslator  |  _native.PortMapAddressTranslator  |  _native.PassThroughAddressTranslator]:
+        r"""
+        Translator applied to every address a server advertises for a
+        peer before the client connects to it. When set, :attr:`ip_map` is
+        ignored. ``None`` (the default) translates through
+        :attr:`ip_map`. A translator never rewrites the TLS name.
+
+        Example::
+
+            policy = ClientPolicy()
+            policy.address_translator = PortMapAddressTranslator(
+                {"10.0.0.1:3000": "lb.example.com:30001"}
+            )
+        """
+    @address_translator.setter
+    def address_translator(self, value: typing.Optional[_native.StaticMapAddressTranslator  |  _native.PortMapAddressTranslator  |  _native.PassThroughAddressTranslator]) -> None: ...
+    @property
+    def translation_on_miss(self) -> _native.TranslationMissMode:
+        r"""
+        What happens when the address translator has no mapping for an
+        advertised address. Default: ``TranslationMissMode.PASS_THROUGH``.
+        """
+    @translation_on_miss.setter
+    def translation_on_miss(self, value: _native.TranslationMissMode) -> None: ...
+    @property
+    def discovery_merge_policy(self) -> _native.SeedMergePolicy:
+        r"""
+        How the constructor's seeds and the provider's seeds are combined.
+        Default: ``SeedMergePolicy.MERGE``.
+        """
+    @discovery_merge_policy.setter
+    def discovery_merge_policy(self, value: _native.SeedMergePolicy) -> None: ...
+    @property
+    def discovery_refresh_interval(self) -> builtins.int:
+        r"""
+        Interval in milliseconds between refreshes of a seed candidate
+        provider whose seeds can change. Must be at least
+        :attr:`tend_interval`; client construction fails otherwise.
+        Default: ``30000``.
+        """
+    @discovery_refresh_interval.setter
+    def discovery_refresh_interval(self, value: builtins.int) -> None: ...
+    @property
+    def discovery_refresh_timeout(self) -> builtins.int:
+        r"""
+        Time in milliseconds one periodic refresh of a
+        :class:`SeedCandidateProvider` subclass may take on its refresh
+        thread. A longer refresh's result is discarded and the previous
+        seeds kept, and :meth:`Client.close` waits at most this long for
+        a refresh in progress before the provider is closed. Default:
+        ``10000``.
+
+        Raises:
+            ValueError: If set to 0.
+        """
+    @discovery_refresh_timeout.setter
+    def discovery_refresh_timeout(self, value: builtins.int) -> None: ...
+    @property
+    def discovery_tend_refresh_deadline(self) -> builtins.int:
+        r"""
+        Time in milliseconds one periodic seed refresh may take on the
+        cluster tend task. A refresh still running at the deadline is
+        cancelled and the previous seeds kept; after three consecutive
+        overruns the provider is no longer called and the seeds of client
+        construction are restored. Must be greater than 0 and at most
+        half of :attr:`tend_interval`, and a provider's own timeout may
+        not exceed it; client construction fails otherwise. Default:
+        ``100``.
+        """
+    @discovery_tend_refresh_deadline.setter
+    def discovery_tend_refresh_deadline(self, value: builtins.int) -> None: ...
     @property
     def cluster_name(self) -> typing.Optional[builtins.str]:
         r"""
@@ -2244,6 +2532,98 @@ class CommandMetric:
         r"""
         Response sizes in bytes.
         """
+
+@typing.final
+class DnsSeedCandidateProvider:
+    r"""
+    Seed candidate provider that resolves DNS names into seed hosts.
+
+    Resolved at client construction and again every
+    :attr:`ClientPolicy.discovery_refresh_interval` milliseconds, on the
+    cluster tend task. Every returned host is an IP address. A refresh
+    must finish within :attr:`ClientPolicy.discovery_tend_refresh_deadline`,
+    so *timeout* may not exceed it: client construction fails otherwise.
+    With the default deadline of 100 ms, only a nearby resolver answers
+    reliably in time.
+
+    A name that does not resolve is logged at warning level and the
+    others are used. When every name fails, a refresh keeps the previous
+    seeds, and at construction the static seeds are used; with no static
+    seeds either, construction fails with
+    ``ResultCode.SEED_DISCOVERY_FAILED``.
+
+    Example::
+
+        policy = ClientPolicy()
+        policy.seed_candidate_provider = DnsSeedCandidateProvider(
+            ["_aerospike._tcp.prod.example.com"],
+            record_type=DnsRecordType.SRV,
+            timeout=50,
+            servers=["10.20.0.2"],
+        )
+        policy.discovery_merge_policy = SeedMergePolicy.DISCOVERY_ONLY
+        client = await new_client(policy, [])
+    """
+    @property
+    def names(self) -> builtins.list[builtins.str]:
+        r"""
+        The DNS names resolved on every refresh.
+        """
+    @property
+    def record_type(self) -> _native.DnsRecordType:
+        r"""
+        The record type queried.
+        """
+    @property
+    def port(self) -> builtins.int:
+        r"""
+        The port given to hosts resolved from A and AAAA records.
+        """
+    @property
+    def tls_name(self) -> typing.Optional[builtins.str]:
+        r"""
+        The TLS name given to every returned host, or ``None``.
+        """
+    @property
+    def timeout(self) -> builtins.int:
+        r"""
+        Total time in milliseconds for one refresh.
+        """
+    @property
+    def servers(self) -> builtins.list[builtins.str]:
+        r"""
+        The configured resolver addresses; empty for the system resolvers.
+        """
+    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __new__(cls, names: typing.Sequence[builtins.str], record_type: _native.DnsRecordType = _native.DnsRecordType.A, port: builtins.int = 3000, tls_name: typing.Optional[builtins.str] = None, timeout: builtins.int = 80, servers: typing.Optional[typing.Sequence[builtins.str]] = None) -> _native.DnsSeedCandidateProvider:
+        r"""
+        Create a provider resolving *names*.
+
+        Args:
+            names: DNS names to resolve, at least one, without duplicates
+                (compared case-insensitively, trailing dot optional). Each
+                is queried as an absolute name.
+            record_type: Record type queried for each name.
+            port: Port given to hosts resolved from A and AAAA records;
+                SRV records carry their own.
+            tls_name: TLS name given to every returned host. ``None`` to
+                default it as for the constructor's seeds.
+            timeout: Total time in milliseconds for one refresh, across
+                every name, record and resolver.
+            servers: Resolver addresses, each an IP address with an
+                optional port (``"10.0.0.2"``, ``"10.0.0.2:5353"``,
+                ``"[2001:db8::1]:53"``), tried in order. ``None`` for the
+                system resolvers, read once here.
+
+        Returns:
+            DnsSeedCandidateProvider
+
+        Raises:
+            ValueError: If a setting is invalid; the message names it.
+            ClientError: If *servers* is ``None`` and no system resolver
+                is configured.
+        """
+    def __repr__(self) -> builtins.str: ...
 
 class DropIndexTask:
     def query_status(self) -> typing.Awaitable[TaskStatus]: ...
@@ -5516,6 +5896,73 @@ class PartitionStatus:
         Note: 'id' is read-only and cannot be set.
         """
 
+@typing.final
+class PassThroughAddressTranslator:
+    r"""
+    Address translator returning every advertised address unchanged.
+
+    For servers that advertise a client-reachable address and port per
+    node, such as with :attr:`ClientPolicy.use_services_alternate`. Never
+    misses.
+
+    Example::
+
+        policy = ClientPolicy()
+        policy.use_services_alternate = True
+        policy.address_translator = PassThroughAddressTranslator()
+    """
+    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __new__(cls) -> _native.PassThroughAddressTranslator:
+        r"""
+        Create a pass-through translator.
+
+        Returns:
+            PassThroughAddressTranslator
+        """
+    def __repr__(self) -> builtins.str: ...
+
+@typing.final
+class PortMapAddressTranslator:
+    r"""
+    Address translator mapping an advertised ``host:port``, or a node
+    name, to the ``host:port`` to connect to.
+
+    For a load balancer or NAT that gives each node its own port on a
+    shared address. A ``host:port`` key takes precedence over a node name
+    key; an IPv6 host is written in brackets (``"[2001:db8::1]:3000"``).
+
+    Example::
+
+        policy = ClientPolicy()
+        policy.address_translator = PortMapAddressTranslator({
+            "10.0.0.1:3000": "lb.example.com:30001",
+            "BB9020011AC4202": "lb.example.com:30002",
+        })
+    """
+    @property
+    def port_map(self) -> builtins.dict[builtins.str, builtins.str]:
+        r"""
+        The advertised address to connect-to address map.
+        """
+    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __new__(cls, port_map: typing.Mapping[builtins.str, builtins.str]) -> _native.PortMapAddressTranslator:
+        r"""
+        Create a translator over *port_map*.
+
+        Args:
+            port_map: Advertised ``host:port`` or node name to the
+                ``host:port`` to connect to, the port in 1 to 65535. An
+                advertised address matching no key is a miss, handled by
+                :attr:`ClientPolicy.translation_on_miss`.
+
+        Returns:
+            PortMapAddressTranslator
+
+        Raises:
+            ValueError: If an entry is invalid; the message names it.
+        """
+    def __repr__(self) -> builtins.str: ...
+
 class Privilege:
     @property
     def code(self) -> _native.PrivilegeCode: ...
@@ -6030,6 +6477,9 @@ class ResultCode:
     INVALID_GEOJSON: _native.ResultCode
     QUERY_NETIO_ERR: _native.ResultCode
     QUERY_DUPLICATE: _native.ResultCode
+    SEED_DISCOVERY_FAILED: _native.ResultCode
+    TRANSLATION_COLLISION: _native.ResultCode
+    TRANSLATION_MISS: _native.ResultCode
     TXN_ALREADY_ABORTED: _native.ResultCode
     TXN_ALREADY_COMMITTED: _native.ResultCode
     TXN_FAILED: _native.ResultCode
@@ -6134,6 +6584,93 @@ class Sampler:
     def __repr__(self) -> builtins.str: ...
     def __eq__(self, other: object) -> builtins.bool: ...
     def __ne__(self, other: object) -> builtins.bool: ...
+@typing.final
+class SeedCandidateContext:
+    r"""
+    What a :class:`SeedCandidateProvider` is told about the call it answers.
+    """
+    @property
+    def cluster_name(self) -> typing.Optional[builtins.str]:
+        r"""
+        The expected cluster name, :attr:`ClientPolicy.cluster_name`.
+        """
+    @property
+    def configured_seeds(self) -> builtins.list[_native.Host]:
+        r"""
+        The seeds passed to the client constructor.
+        """
+    @property
+    def tend_iteration(self) -> builtins.int:
+        r"""
+        Completed cluster tend iterations when the refresh started: ``0`` at
+        client construction. Informational only.
+        """
+    def __repr__(self) -> builtins.str: ...
+
+class SeedCandidateProvider:
+    r"""
+    Base class for a seed candidate provider written in Python.
+
+    Subclass it and override :meth:`refresh_seed_candidates`. The client
+    calls it once at construction. When :meth:`needs_periodic_refresh`
+    returns ``True``, the client also calls it every
+    :attr:`ClientPolicy.discovery_refresh_interval` milliseconds on a
+    background thread it starts for the provider, never on the cluster tend
+    task, so a refresh may block, on a cloud API call for instance. The tend
+    task uses the latest successful result; a refresh that takes longer than
+    :attr:`ClientPolicy.discovery_refresh_timeout` is discarded.
+
+    Each client calls the provider from one thread at a time, so it needs no
+    locking of its own; a provider shared by several clients is called by
+    each of them.
+
+    Example::
+
+        class RegistryProvider(SeedCandidateProvider):
+            def __init__(self, registry):
+                self.registry = registry
+
+            def refresh_seed_candidates(self, ctx):
+                return [Host(node.ip, 3000) for node in self.registry.lookup("aerospike")]
+
+            def needs_periodic_refresh(self):
+                return True
+
+        policy = ClientPolicy()
+        policy.seed_candidate_provider = RegistryProvider(registry)
+        client = await new_client(policy, [])
+    """
+    def __new__(cls, *_args: typing.Any, **_kwargs: typing.Any) -> _native.SeedCandidateProvider: ...
+    def refresh_seed_candidates(self, ctx: _native.SeedCandidateContext) -> builtins.list[_native.Host]:
+        r"""
+        Returns the current seed hosts.
+
+        Args:
+            ctx: The call's context.
+
+        Returns:
+            The seed hosts, a list of :class:`Host`; possibly empty.
+
+        Raises:
+            Exception: Any exception reports a failure. At construction it is
+                logged and the constructor's seeds are used; with none, the
+                constructor fails with ``ResultCode.SEED_DISCOVERY_FAILED``.
+                On a periodic refresh it is logged and the previous seeds
+                kept.
+        """
+    def needs_periodic_refresh(self) -> builtins.bool:
+        r"""
+        Whether the seeds can change and must be refreshed periodically.
+        Called once per client, at construction. The default, ``False``,
+        calls :meth:`refresh_seed_candidates` only at construction.
+        """
+    def close(self) -> None:
+        r"""
+        Releases the provider's resources. Called once per client, after
+        :meth:`Client.close` and after the last refresh has returned. The
+        default does nothing.
+        """
+
 @typing.final
 class SelectFlags:
     r"""
@@ -6345,6 +6882,76 @@ class Statement:
         a different bin; a Top-K query takes at most two keys. See
         :meth:`set_order_by`.
         """
+
+@typing.final
+class StaticMapAddressTranslator:
+    r"""
+    Address translator mapping an advertised host name or IP address to
+    another; the port is kept.
+
+    Set as :attr:`ClientPolicy.address_translator`, it replaces
+    :attr:`ClientPolicy.ip_map`, which builds the same translator.
+
+    Example::
+
+        policy = ClientPolicy()
+        policy.address_translator = StaticMapAddressTranslator(
+            {"10.0.0.1": "203.0.113.1", "10.0.0.2": "203.0.113.2"}
+        )
+    """
+    @property
+    def ip_map(self) -> builtins.dict[builtins.str, builtins.str]:
+        r"""
+        The advertised host to connect-to host map.
+        """
+    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __new__(cls, ip_map: typing.Mapping[builtins.str, builtins.str]) -> _native.StaticMapAddressTranslator:
+        r"""
+        Create a translator over *ip_map*.
+
+        Args:
+            ip_map: Advertised host to the host to connect to. An
+                advertised host not in the map is a miss, handled by
+                :attr:`ClientPolicy.translation_on_miss`.
+
+        Returns:
+            StaticMapAddressTranslator
+        """
+    def __repr__(self) -> builtins.str: ...
+
+@typing.final
+class StaticSeedCandidateProvider:
+    r"""
+    Seed candidate provider over a fixed list of hosts.
+
+    Called once, at client construction. Combined with the seeds passed
+    to the client constructor by :attr:`ClientPolicy.discovery_merge_policy`.
+
+    Example::
+
+        policy = ClientPolicy()
+        policy.seed_candidate_provider = StaticSeedCandidateProvider(
+            [Host("10.0.0.1", 3000), Host("10.0.0.2", 3000)]
+        )
+        client = await new_client(policy, [])
+    """
+    @property
+    def hosts(self) -> builtins.list[_native.Host]:
+        r"""
+        The seed hosts the provider returns.
+        """
+    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __new__(cls, hosts: typing.Sequence[_native.Host]) -> _native.StaticSeedCandidateProvider:
+        r"""
+        Create a provider over *hosts*.
+
+        Args:
+            hosts: The seed hosts the provider returns.
+
+        Returns:
+            StaticSeedCandidateProvider
+        """
+    def __repr__(self) -> builtins.str: ...
 
 class StringOperation:
     r"""
@@ -7347,6 +7954,46 @@ class WritePolicy(_native.BasePolicy):
         """
 
 @typing.final
+class _ConformanceRefresher:
+    r"""
+    Drives a seed candidate provider through the client's own refresh and
+    merge code, one refresh per call, with the policy's merge policy.
+
+    :meth:`initial` is the refresh at client initialization, each
+    :meth:`refresh` a periodic one.
+    """
+    @property
+    def seeds(self) -> builtins.list[_native.Host]:
+        r"""
+        The seed list in effect.
+        """
+    def __new__(cls, policy: _native.ClientPolicy, static_seeds: typing.Sequence[_native.Host]) -> _native._ConformanceRefresher:
+        r"""
+        A refresher over `policy.seed_candidate_provider`.
+
+        Raises ``ValueError`` when the policy has no provider, or has a
+        ``SeedCandidateProvider`` subclass: that answers periodic refreshes
+        from its own thread, so it cannot be driven one refresh at a time.
+        """
+    @staticmethod
+    def scripted(policy: _native.ClientPolicy, results: typing.Sequence[typing.Sequence[_native.Host]], static_seeds: typing.Sequence[_native.Host]) -> _native._ConformanceRefresher:
+        r"""
+        A refresher over a provider that returns `results` in order, one per
+        refresh, starting with :meth:`initial`.
+        """
+    def initial(self) -> tuple[typing.Optional[builtins.list[_native.Host]], typing.Optional[builtins.BaseException], builtins.list[_native.Host]]:
+        r"""
+        The refresh at client initialization: the provider's hosts or error,
+        and the seed list it establishes.
+        """
+    def refresh(self) -> tuple[typing.Optional[builtins.list[_native.Host]], typing.Optional[builtins.BaseException], builtins.list[_native.Host]]:
+        r"""
+        One periodic refresh: the provider's hosts or error, and the seed
+        list in effect afterwards, the previous one when the refresh
+        published nothing.
+        """
+
+@typing.final
 class _LocalClient:
     r"""
     Sync-only Aerospike client that owns a per-thread `current_thread`
@@ -7459,6 +8106,37 @@ class AuthMode(enum.Enum):
     Allows authentication and authorization based on a certificate. No user name or
     password needs to be configured. Requires TLS and a client certificate.
     Requires server version 5.7.0+
+    """
+
+@typing.final
+class AwsAddressField(enum.Enum):
+    r"""
+    EC2 instance field an :class:`AwsEc2TagSeedCandidateProvider` returns
+    as each seed address.
+
+    Example::
+
+        provider = AwsEc2TagSeedCandidateProvider(
+            "us-east-1",
+            {"tag:aerospike-cluster": ["prod-a"]},
+            address_field=AwsAddressField.PRIVATE_DNS,
+        )
+    """
+    PRIVATE_IP = ...
+    r"""
+    The primary private IPv4 address. The default.
+    """
+    PUBLIC_IP = ...
+    r"""
+    The public IPv4 address.
+    """
+    PRIVATE_DNS = ...
+    r"""
+    The private DNS name.
+    """
+    PUBLIC_DNS = ...
+    r"""
+    The public DNS name.
     """
 
 @typing.final
@@ -7588,6 +8266,28 @@ class Concurrency(enum.Enum):
     PARALLEL = ...
     r"""
     Issue the per-node requests in parallel across nodes.
+    """
+
+@typing.final
+class DnsRecordType(enum.Enum):
+    r"""
+    DNS record type a :class:`DnsSeedCandidateProvider` queries.
+
+    Example::
+
+        provider = DnsSeedCandidateProvider(
+            ["_aerospike._tcp.prod.example.com"], record_type=DnsRecordType.SRV
+        )
+    """
+    A = ...
+    r"""
+    A and AAAA records, each address given the provider's port. The
+    default.
+    """
+    SRV = ...
+    r"""
+    SRV records, each target resolved to an address and given the
+    record's port.
     """
 
 @typing.final
@@ -8013,6 +8713,41 @@ class Replica(enum.Enum):
     PREFER_RACK = ...
 
 @typing.final
+class SeedMergePolicy(enum.Enum):
+    r"""
+    How the seeds passed to the client constructor (static seeds) and the
+    seeds :attr:`ClientPolicy.seed_candidate_provider` returns (discovered
+    seeds) are combined into the list of seeds the client tries.
+
+    Duplicates (same name and port) are dropped, keeping the first. The
+    policy orders seed attempts only; it never changes which nodes join.
+
+    Example::
+
+        policy = ClientPolicy()
+        policy.seed_candidate_provider = DnsSeedCandidateProvider(
+            ["aerospike.prod.example.com"]
+        )
+        policy.discovery_merge_policy = SeedMergePolicy.DISCOVERY_ONLY
+    """
+    MERGE = ...
+    r"""
+    Static seeds first, then discovered seeds. The default: the static
+    seeds stay a known-good fallback while discovery is adopted.
+    """
+    REPLACE = ...
+    r"""
+    Static then discovered seeds at initialization; afterwards each
+    refresh's discovered seeds replace the list, and an empty refresh
+    keeps the previous list.
+    """
+    DISCOVERY_ONLY = ...
+    r"""
+    Discovered seeds only, falling back to the static seeds whenever
+    discovery returns none.
+    """
+
+@typing.final
 class SpecialValue(enum.Enum):
     r"""
     Markers for Aerospike CDT map/list range and value operations.
@@ -8128,6 +8863,34 @@ class TaskStatus(enum.Enum):
     COMPLETE = ...
 
 @typing.final
+class TranslationMissMode(enum.Enum):
+    r"""
+    What the client does when :attr:`ClientPolicy.address_translator` has
+    no mapping for an address a server advertises.
+
+    Applies to every translator, including the default one built from
+    :attr:`ClientPolicy.ip_map`.
+
+    Example::
+
+        policy = ClientPolicy()
+        policy.address_translator = PortMapAddressTranslator(
+            {"10.0.0.1:3000": "lb.example.com:30001"}
+        )
+        policy.translation_on_miss = TranslationMissMode.STRICT
+    """
+    PASS_THROUGH = ...
+    r"""
+    Connect to the advertised address unchanged. The default.
+    """
+    STRICT = ...
+    r"""
+    Do not connect to the advertised address: the peer is left out of
+    the cluster, the miss logged at warning level with
+    ``ResultCode.TRANSLATION_MISS``, and retried on the next tend.
+    """
+
+@typing.final
 class TxnState(enum.Enum):
     OPEN = ...
     VERIFIED = ...
@@ -8209,6 +8972,21 @@ class VectorElementType(enum.Enum):
     FLOAT64 = ...
     r"""
     64-bit IEEE 754 double.
+    """
+
+def _conformance_tls_name_matches(certificate: bytes, tls_name: builtins.str) -> builtins.bool:
+    r"""
+    Whether the PEM `certificate`'s subject alternative names match
+    `tls_name`, as the TLS handshake checks them. A `tls_name` that is not a
+    DNS name or an IP address matches nothing.
+    """
+
+def _conformance_translate(policy: _native.ClientPolicy, node_name: builtins.str, host: builtins.str, port: builtins.int, tls_name: typing.Optional[builtins.str] = None, alternate: builtins.bool = False) -> _native.Host:
+    r"""
+    Translates an advertised address with the translator and miss mode a
+    client built from `policy` uses.
+
+    Raises the client's translation-miss error on a strict miss.
     """
 
 def geojson(geo_str: builtins.str) -> _native.GeoJSON:

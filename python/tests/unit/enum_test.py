@@ -286,6 +286,9 @@ class TestResultCodeCatalog:
     # Negative, client-assigned codes with their wire values. ASYNC_QUEUE_FULL
     # (-9) is reserved in core and never produced, so it has no constant.
     CORE_CLIENT_CODES = {
+        "SEED_DISCOVERY_FAILED": -27,
+        "TRANSLATION_COLLISION": -26,
+        "TRANSLATION_MISS": -25,
         "TXN_ALREADY_ABORTED": -19,
         "TXN_ALREADY_COMMITTED": -18,
         "TXN_FAILED": -17,

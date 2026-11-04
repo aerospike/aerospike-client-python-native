@@ -28,12 +28,14 @@ dependencies = [
  "parking_lot",
  "rand 0.10.1",
  "regex",
+ "ring",
  "ripemd",
  "rustls",
  "serde",
  "serde_norway",
  "socket2",
  "tokio-rustls",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -59,6 +61,7 @@ name = "aerospike_native"
 version = "1.0.0"
 dependencies = [
  "aerospike-core",
+ "async-trait",
  "futures",
  "half",
  "hex",

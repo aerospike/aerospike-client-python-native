@@ -14,10 +14,12 @@
 # the License.
 
 import asyncio
+import os
 import time
 
 import pytest
 from aerospike_native import (
+    AuthMode,
     ClientPolicy,
     GeoJSON,
     Key,
@@ -29,6 +31,42 @@ from aerospike_native import (
     new_client,
 )
 from aerospike_native.exceptions import ServerError
+
+
+_AUTH_MODES = {
+    "NONE": AuthMode.NONE,
+    "INTERNAL": AuthMode.INTERNAL,
+    "EXTERNAL": AuthMode.EXTERNAL,
+    "PKI": AuthMode.PKI,
+}
+
+
+def sc_client_policy() -> ClientPolicy:
+    """Client policy for the cluster the ``AEROSPIKE_SC_*`` variables name."""
+    cp = ClientPolicy()
+    cp.use_services_alternate = (
+        os.environ.get("AEROSPIKE_SC_USE_SERVICES_ALTERNATE")
+        or os.environ.get("AEROSPIKE_USE_SERVICES_ALTERNATE", "")
+    ).lower() == "true"
+    user = os.environ.get("AEROSPIKE_SC_USER") or os.environ.get("AEROSPIKE_AUTH_USER")
+    password = (
+        os.environ.get("AEROSPIKE_SC_PASSWORD")
+        or os.environ.get("AEROSPIKE_AUTH_PASSWORD")
+    )
+    mode_name = (
+        os.environ.get("AEROSPIKE_SC_AUTH_MODE")
+        or os.environ.get("AEROSPIKE_AUTH_MODE")
+        or ""
+    ).strip().upper()
+    if user and password:
+        mode = _AUTH_MODES.get(mode_name, AuthMode.INTERNAL)
+        cp.set_auth_mode(mode, user=user, password=password)
+    return cp
+
+
+def sc_host() -> str:
+    """Seed of the cluster the ``AEROSPIKE_SC_*`` variables name."""
+    return os.environ.get("AEROSPIKE_SC_HOST") or os.environ.get("AEROSPIKE_HOST", "")
 
 
 async def wait_for_index_ready(

@@ -34,12 +34,12 @@ stubs:
 	# Generate type stubs and organize them as a Python package
 	# stub_gen.rs will automatically move _native.pyi to the correct location
 	# Suppress warnings from dependencies (aerospike-core) to keep output clean
-	# Uses --no-default-features + --features tls so TlsConfig stubs are generated
-	# (extension-module is excluded; only tls is needed for complete stubs)
-	# A generator build failure must fail this target: the previous pipeline form
-	# swallowed it and post-processed the stale file instead.
+	# Builds every default feature except extension-module, which a binary
+	# cannot link; a feature left out here drops its classes from the stubs.
+	# A generator build failure must fail this target, or the stale file gets
+	# post-processed as if it were current.
 	@[ -f aerospike.env ] && . ./aerospike.env; \
-	RUSTFLAGS="-A warnings" cargo run --no-default-features --features tls --bin stub_gen > stub_gen.log 2>&1 \
+	RUSTFLAGS="-A warnings" cargo run --no-default-features --features tls,discovery-aws --bin stub_gen > stub_gen.log 2>&1 \
 		|| { cat stub_gen.log; rm -f stub_gen.log; exit 1; }; \
 	grep -v "warning:.*aerospike-core" stub_gen.log || true; rm -f stub_gen.log
 	# Post-process stubs to fix issues pyo3_stub_gen can't handle automatically

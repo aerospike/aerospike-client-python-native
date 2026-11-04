@@ -64,6 +64,7 @@ from aerospike_native import (
     QuerySelection,
     ReadPolicy,
     ResultCode,
+    SeedCandidateProvider,
     SelectFlags,
     SortedMap,
     Statement,
@@ -787,6 +788,28 @@ def test_blocking_connect_with_hosts(client_type, aerospike_host, use_services_a
     finally:
         client.delete_blocking(key, policy=WritePolicy())
         # The local client owns its runtime and shuts down on drop.
+        if not isinstance(client, _LocalClient):
+            client.close_blocking()
+
+
+@pytest.mark.parametrize(
+    "client_type", [new_client_blocking, _LocalClient], ids=["client", "local_client"],
+)
+def test_blocking_connect_with_python_seed_provider(client_type, aerospike_host, use_services_alternate):
+    """Each blocking constructor calls a Python seed provider from another thread without deadlocking."""
+    name, port = aerospike_host.rsplit(":", 1)
+
+    class FixedSeeds(SeedCandidateProvider):
+        def refresh_seed_candidates(self, ctx):
+            return [Host(name, int(port))]
+
+    cp = ClientPolicy()
+    cp.use_services_alternate = use_services_alternate
+    cp.seed_candidate_provider = FixedSeeds()
+    client = client_type(cp, [])
+    try:
+        assert client.exists_blocking(Key("test", "blocking", "seed-provider-1"), policy=ReadPolicy()) is False
+    finally:
         if not isinstance(client, _LocalClient):
             client.close_blocking()
 

@@ -16,8 +16,8 @@
 """Tests for execute_udf functionality."""
 import os
 import pytest
-from aerospike_native import WritePolicy, ReadPolicy, Key, UDFLang
-from aerospike_native.exceptions import UDFBadResponse
+from aerospike_native import WritePolicy, ReadPolicy, Key, ResultCode, UDFLang
+from aerospike_native.exceptions import TimeoutError, UDFBadResponse
 from fixtures import TestFixtureConnection
 
 
@@ -350,3 +350,29 @@ class TestExecuteUDF(TestFixtureConnection):
         # (finalized on the top error only), so it is not asserted per attempt.
         assert err.sub_exceptions, "expected prior attempts in sub_exceptions"
         assert all(isinstance(s, TimeoutError) for s in err.sub_exceptions)
+
+    async def test_udf_retried_timeout_chains_the_last_attempt_on_cause(self, client_with_sleep_udf):
+        """A retried timeout reports MAX_RETRIES_EXCEEDED over the last
+        attempt's own timeout, which ``__cause__`` carries as an exception
+        with its own one-line message."""
+        key = Key("test", "test", "retry_cause_test_key")
+        wp = WritePolicy()
+        wp.socket_timeout = 250
+        wp.total_timeout = 0
+        wp.max_retries = 1
+
+        with pytest.raises(TimeoutError) as exc_info:
+            await client_with_sleep_udf.execute_udf(
+                key,
+                "sleep_example",
+                "sleep",
+                [1000],
+                policy=wp,
+            )
+        err = exc_info.value
+        cause = err.__cause__
+        assert err.result_code == ResultCode.MAX_RETRIES_EXCEEDED
+        assert isinstance(cause, TimeoutError)
+        assert cause.result_code == ResultCode.TIMEOUT
+        assert "\n" not in str(cause)
+        assert cause.__cause__ is None
