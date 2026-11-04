@@ -76,8 +76,8 @@ jobs:
     secrets: inherit
 
   # Smoke-install the published wheels across the platforms that would otherwise
-  # silently fall back to a source build: the x86_64 baseline, free-threaded
-  # linux, Apple Silicon, and free-threaded Apple Silicon, on each dev Python. Each leg pulls
+# silently fall back to a source build: the x86_64 baseline, linux aarch64,
+# free-threaded linux, Apple Silicon, and free-threaded Apple Silicon, on each dev Python. Each leg pulls
   # only the wheel matching its (runner, interpreter) and asserts it installs and
   # imports as a binary wheel. fail-fast is off so one bad platform doesn't mask
   # the others.
@@ -90,6 +90,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: linux-x86_64-py311
+            runs-on: ubuntu-22.04
+            python: "3.11"
+            wheel-glob: "*cp311-cp311-manylinux*x86_64*.whl"
+          - name: linux-aarch64-py311
+            runs-on: ubuntu-24.04-arm
+            python: "3.11"
+            wheel-glob: "*cp311-cp311-manylinux*aarch64*.whl"
           - name: linux-x86_64-py314
             runs-on: ubuntu-22.04
             python: "3.14"
