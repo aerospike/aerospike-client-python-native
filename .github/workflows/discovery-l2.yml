@@ -58,6 +58,11 @@ jobs:
         with:
           python-version: ${{ env.L2_PYTHON }}
 
+      # The wheel build runs as root in a container, and a directory it creates
+      # stays root-owned, so the later steps could not write into build/l2.
+      - name: Create the build directory
+        run: mkdir -p build/l2
+
       - name: Build the wheel
         uses: PyO3/maturin-action@v1
         with:
@@ -119,7 +124,6 @@ jobs:
           for host in "${client_hosts[@]}"; do
             [[ -n "${host}" ]] && run_args+=(--add-host "${host}")
           done
-          mkdir -p build/l2
           docker run "${run_args[@]}" "python:${L2_PYTHON}-slim-bookworm" \
             bash .github/discovery/run-l2-suite.sh 2>&1 | tee "build/l2/${DISCOVERY_SUBSET}-${L2_PROFILE}.log"
           test "${PIPESTATUS[0]}" -eq 0
