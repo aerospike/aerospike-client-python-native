@@ -1189,13 +1189,15 @@ use aerospike_core::VectorData;
         PyValueError::new_err(e.message().unwrap_or_default().to_owned())
     }
 
-    /// Rounds each element to the nearest `float16`, refusing a finite value
-    /// that has no finite `float16` form rather than storing an infinity.
+    /// Rounds each element to the nearest `float16` by way of `float32`, so a
+    /// value gives the same bits here as in a client whose native float is
+    /// single precision. A finite value with no finite `float16` form is
+    /// refused rather than stored as an infinity.
     fn float16_bits(data: Vec<f64>) -> PyResult<Vec<u16>> {
         data.into_iter()
             .enumerate()
             .map(|(i, x)| {
-                let h = half::f16::from_f64(x);
+                let h = half::f16::from_f32(x as f32);
                 if x.is_finite() && !h.is_finite() {
                     return Err(PyValueError::new_err(format!(
                         "vector element {i} is out of float16 range: {x}"
@@ -1339,8 +1341,12 @@ use aerospike_core::VectorData;
     ///
     /// A vector has at least one element, and every floating-point element is
     /// finite: an empty sequence, a NaN or an infinity raises :class:`ValueError`.
-    /// ``FLOAT16`` elements given as Python floats are rounded to the nearest
-    /// half-precision value.
+    /// ``FLOAT16`` elements given as Python floats are converted by way of single
+    /// precision, then rounded to the nearest half-precision value with ties to
+    /// even, so a value gives the same bits as in any other Aerospike client. A
+    /// magnitude of 65520 or more rounds to infinity and is refused. To build the
+    /// same bits from numpy, go through ``float32`` as well:
+    /// ``np.array(values, dtype=np.float32).astype(np.float16)``.
     ///
     /// A vector is an immutable, hashable sequence: ``len(v)``, ``v[i]``, slicing
     /// and iteration work as they do for a tuple, and two vectors are equal when
