@@ -61,7 +61,34 @@ class TestVectorConstruction:
         assert v.value == [1.0, 2.5]
 
     def test_float16_rounds_to_nearest_half(self):
-        assert Vector([0.1], VectorElementType.FLOAT16).value == [0.0999755859375]
+        v = Vector([0.1], VectorElementType.FLOAT16)
+        assert bytes(v) == struct.pack("<H", 0x2E66)
+        assert v.value == [0.0999755859375]
+
+    def test_float16_rounds_ties_to_even(self):
+        # float16 spacing near 1.0 is 2^-10; each input is exactly halfway between
+        # two float16 values, so the result lands on the even one.
+        tie_down = 1.0 + 2**-11
+        tie_up = 1.0 + 3 * 2**-11
+        v = Vector([tie_down, tie_up], VectorElementType.FLOAT16)
+        assert bytes(v) == struct.pack("<2H", 0x3C00, 0x3C02)
+        assert v.value == [1.0, 1.0 + 2**-9]
+
+    def test_float16_converts_through_float32(self):
+        # Just above a float16 tie, but within half a float32 ulp of it: rounding
+        # to float32 first lands on the tie, which then rounds down to even.
+        # Direct float64 rounding would give 0x3C01.
+        v = Vector([1.0 + 2**-11 + 2**-30], VectorElementType.FLOAT16)
+        assert bytes(v) == struct.pack("<H", 0x3C00)
+
+    def test_float16_accepts_limits(self):
+        # 65504 is the largest float16; anything below 65520 still rounds to it.
+        below_overflow = 65520.0 - 2**-8
+        v = Vector(
+            [65504.0, -65504.0, below_overflow, -below_overflow, 2**-24, -0.0],
+            VectorElementType.FLOAT16,
+        )
+        assert bytes(v) == struct.pack("<6H", 0x7BFF, 0xFBFF, 0x7BFF, 0xFBFF, 0x0001, 0x8000)
 
     def test_copy_of_vector(self):
         v = Vector([1.0, 2.0], VectorElementType.FLOAT64)
@@ -83,9 +110,10 @@ class TestVectorConstruction:
         with pytest.raises(ValueError):
             Vector(values, element_type)
 
-    def test_float16_out_of_range_is_rejected(self):
-        with pytest.raises(ValueError, match="out of float16 range"):
-            Vector([1.0, 70000.0], VectorElementType.FLOAT16)
+    @pytest.mark.parametrize("value", [65520.0, -65520.0, 1e6, 1e300])
+    def test_float16_out_of_range_is_rejected(self, value):
+        with pytest.raises(ValueError, match="element 1 is out of float16 range"):
+            Vector([1.0, value], VectorElementType.FLOAT16)
 
     def test_oversized_vector_is_rejected(self):
         with pytest.raises(ValueError, match="exceeds max"):
