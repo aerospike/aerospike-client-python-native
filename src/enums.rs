@@ -1609,3 +1609,109 @@ pub enum Concurrency {
         #[classattr]
         const NO_FAIL: i64 = 0x10;
     }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////
+    //
+    //  Top-K: BinDataType, Order
+    //
+    ////////////////////////////////////////////////////////////////////////////////////////////
+
+    /// Declared type of a Top-K order key, used with :meth:`Statement.set_order_by`.
+    ///
+    /// A record whose order-key bin is missing or holds another type ranks last.
+    #[gen_stub_pyclass_enum(module = "_native")]
+    #[pyclass(from_py_object, module = "_native")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum BinDataType {
+        /// 64-bit signed integer.
+        #[pyo3(name = "INTEGER")]
+        Integer,
+        /// 64-bit float. NaN ranks after every other value; ``-0.0`` equals ``0.0``.
+        #[pyo3(name = "DOUBLE")]
+        Double,
+        /// Bytes, compared as unsigned bytes; a prefix ranks before the longer value.
+        #[pyo3(name = "BYTES")]
+        Bytes,
+    }
+
+    impl From<BinDataType> for aerospike_core::OrderByType {
+        fn from(input: BinDataType) -> Self {
+            match input {
+                BinDataType::Integer => aerospike_core::OrderByType::Integer,
+                BinDataType::Double => aerospike_core::OrderByType::Double,
+                BinDataType::Bytes => aerospike_core::OrderByType::Bytes,
+            }
+        }
+    }
+
+    impl From<aerospike_core::OrderByType> for BinDataType {
+        fn from(input: aerospike_core::OrderByType) -> Self {
+            match input {
+                aerospike_core::OrderByType::Integer => BinDataType::Integer,
+                aerospike_core::OrderByType::Double => BinDataType::Double,
+                aerospike_core::OrderByType::Bytes => BinDataType::Bytes,
+                aerospike_core::OrderByType::String => {
+                    unreachable!("order keys are only set through BinDataType, which has no STRING")
+                }
+            }
+        }
+    }
+
+    /// Sort direction of a Top-K order key: which ``k`` records are kept and the
+    /// order they are returned in.
+    #[gen_stub_pyclass_enum(module = "_native")]
+    #[pyclass(from_py_object, module = "_native")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum Order {
+        /// Smallest values first.
+        #[pyo3(name = "ASC")]
+        Asc,
+        /// Largest values first.
+        #[pyo3(name = "DESC")]
+        Desc,
+    }
+
+    impl From<Order> for aerospike_core::Order {
+        fn from(input: Order) -> Self {
+            match input {
+                Order::Asc => aerospike_core::Order::Asc,
+                Order::Desc => aerospike_core::Order::Desc,
+            }
+        }
+    }
+
+    impl From<aerospike_core::Order> for Order {
+        fn from(input: aerospike_core::Order) -> Self {
+            match input {
+                aerospike_core::Order::Asc => Order::Asc,
+                aerospike_core::Order::Desc => Order::Desc,
+            }
+        }
+    }
+
+    macro_rules! impl_simple_enum_eq_hash {
+        ($($ty:ty),*) => {$(
+            #[pymethods]
+            impl $ty {
+                fn __richcmp__(&self, other: &$ty, op: CompareOp) -> PyResult<bool> {
+                    match op {
+                        CompareOp::Eq => Ok(self == other),
+                        CompareOp::Ne => Ok(self != other),
+                        _ => Err(pyo3::exceptions::PyNotImplementedError::new_err(
+                            "Only == and != comparisons are supported",
+                        )),
+                    }
+                }
+
+                fn __hash__(&self) -> u64 {
+                    use std::collections::hash_map::DefaultHasher;
+                    use std::hash::{Hash, Hasher};
+                    let mut hasher = DefaultHasher::new();
+                    self.hash(&mut hasher);
+                    hasher.finish()
+                }
+            }
+        )*};
+    }
+
+    impl_simple_enum_eq_hash!(BinDataType, Order);

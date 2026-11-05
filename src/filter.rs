@@ -28,7 +28,7 @@ use tokio::sync::Mutex;
 
 use aerospike_core::query::RecordStream;
 
-use crate::CollectionIndexType;
+use crate::{BinDataType, CollectionIndexType, Order};
 use crate::cdt::CTX;
 use crate::errors::RustClientError;
 use crate::expressions::FilterExpression;
@@ -459,6 +459,116 @@ use crate::record::{Key, PythonValue, Record};
                 crate::operations::convert_ops_with_ctx_to_core(&py_ops_with_ctx, false)?;
             self._as.set_operations(core_ops);
             Ok(())
+        }
+
+        /// Sets the order key of a Top-K query, replacing any keys set before.
+        ///
+        /// A Top-K query returns the ``k`` best records by this key (see
+        /// :attr:`top_k`), best first. Every node ranks its own records and the
+        /// client merges them; a record that two nodes both returned keeps its
+        /// later-updated copy. Ranking runs after the index filter and
+        /// ``QueryPolicy.filter_expression``, so it changes which matches come
+        /// back, not which records match.
+        ///
+        /// ``bin_name`` names a bin of the *returned* record: a stored bin named in
+        /// ``bins``, or one produced by exactly one :meth:`set_operations` read,
+        /// such as an ``ExpOperation.read`` of :meth:`FilterExpression.vector_distance`.
+        /// A record whose key is missing or of another type ranks last in either
+        /// direction; ties break by digest.
+        ///
+        /// Checked when the query runs, which raises :class:`ValueError` for a bin
+        /// name that is empty, longer than 15 UTF-8 bytes or holds a NUL; a key the
+        /// projection does not return; or an order key without :attr:`top_k`.
+        /// Top-K requires every node to run Aerospike Server 8.2.1 or later, and
+        /// cannot be combined with an aggregation, a background query,
+        /// ``QueryPolicy.max_records`` or a resumed partition filter.
+        pub fn set_order_by(&mut self, bin_name: &str, data_type: BinDataType, order: Order) {
+            self._as.set_order_by(bin_name, data_type.into(), order.into());
+        }
+
+        /// Adds a second order key, compared when the first key ties. It must name
+        /// a different bin; a Top-K query takes at most two keys. See
+        /// :meth:`set_order_by`.
+        pub fn then_order_by(&mut self, bin_name: &str, data_type: BinDataType, order: Order) {
+            self._as.then_order_by(bin_name, data_type.into(), order.into());
+        }
+
+        /// The Top-K order keys, in comparison order; empty for an unranked query.
+        #[getter]
+        pub fn get_order_by(&self) -> Vec<OrderBy> {
+            self._as.order_by.iter().map(|key| OrderBy { _as: key.clone() }).collect()
+        }
+
+        /// The Top-K limit ``k``, in ``[1, 1000]``, or ``None`` for an unranked
+        /// query. Requires an order key (see :meth:`set_order_by`); the two may be
+        /// set in either order.
+        #[getter]
+        pub fn get_top_k(&self) -> Option<u32> {
+            self._as.top_k
+        }
+
+        #[setter]
+        pub fn set_top_k(&mut self, k: Option<u32>) {
+            self._as.top_k = k;
+        }
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////
+    //
+    //  OrderBy
+    //
+    ////////////////////////////////////////////////////////////////////////////////////////////
+
+    /// One Top-K order key of a :class:`Statement`, set with
+    /// :meth:`Statement.set_order_by` or :meth:`Statement.then_order_by`.
+    #[gen_stub_pyclass(module = "_native")]
+    #[pyclass(frozen, skip_from_py_object, name = "OrderBy", module = "_native")]
+    #[derive(Clone)]
+    pub struct OrderBy {
+        _as: aerospike_core::OrderBy,
+    }
+
+    #[gen_stub_pymethods]
+    #[pymethods]
+    impl OrderBy {
+        /// Name of the returned bin the key reads.
+        #[getter]
+        pub fn bin_name(&self) -> String {
+            self._as.bin_name.clone()
+        }
+
+        /// Declared type of the key.
+        #[getter]
+        pub fn data_type(&self) -> BinDataType {
+            self._as.order_type.into()
+        }
+
+        /// Sort direction.
+        #[getter]
+        pub fn order(&self) -> Order {
+            self._as.direction.into()
+        }
+
+        fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
+            other.cast::<OrderBy>().is_ok_and(|o| o.get()._as == self._as)
+        }
+
+        fn __hash__(&self) -> u64 {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let key = &self._as;
+            let mut hasher = DefaultHasher::new();
+            (&key.bin_name, key.order_type, key.direction).hash(&mut hasher);
+            hasher.finish()
+        }
+
+        fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+            Ok(format!(
+                "OrderBy({}, {}, {})",
+                self._as.bin_name.as_str().into_pyobject(py)?.repr()?,
+                Bound::new(py, self.data_type())?.as_any().repr()?,
+                Bound::new(py, self.order())?.as_any().repr()?,
+            ))
         }
     }
 
