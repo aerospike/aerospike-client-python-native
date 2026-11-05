@@ -7075,8 +7075,12 @@ class Vector:
 
     A vector has at least one element, and every floating-point element is
     finite: an empty sequence, a NaN or an infinity raises :class:`ValueError`.
-    ``FLOAT16`` elements given as Python floats are rounded to the nearest
-    half-precision value.
+    ``FLOAT16`` elements given as Python floats are converted by way of single
+    precision, then rounded to the nearest half-precision value with ties to
+    even, so a value gives the same bits as in any other Aerospike client. A
+    magnitude of 65520 or more rounds to infinity and is refused. To build the
+    same bits from numpy, go through ``float32`` as well:
+    ``np.array(values, dtype=np.float32).astype(np.float16)``.
 
     A vector is an immutable, hashable sequence: ``len(v)``, ``v[i]``, slicing
     and iteration work as they do for a tuple, and two vectors are equal when
