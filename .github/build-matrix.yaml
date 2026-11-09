@@ -1,8 +1,9 @@
 # Build cells for build-release.yaml, read by its plan-matrix job.
 #
 # Dev-channel builds publish only the newest Python on linux x86_64 and macOS
-# arm64 -- what local testing and benching use. Every supported version is
-# still built and tested by the PR CI, and release builds publish all of them.
+# arm64 -- what local testing and benching use -- plus windows x64, which the
+# SDK's Windows CI job installs. Every supported version is still built and
+# tested by the PR CI, and release builds publish all of them.
 #
 #   dev: true   both release and dev builds
 #   dev: only   dev builds only
@@ -180,6 +181,7 @@ include:
     maturin-target: ""
     manylinux: ""
   - name: windows-x64-py314
+    dev: true
     runs-on: windows-2022
     package-kind: wheel
     python-version: "3.14"

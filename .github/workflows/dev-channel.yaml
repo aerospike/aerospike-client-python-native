@@ -77,15 +77,18 @@ jobs:
 
   # Smoke-install the published wheels across the platforms that would otherwise
   # silently fall back to a source build: the x86_64 baseline, free-threaded
-  # linux, Apple Silicon, and free-threaded Apple Silicon, on each dev Python. Each leg pulls
-  # only the wheel matching its (runner, interpreter) and asserts it installs and
-  # imports as a binary wheel. fail-fast is off so one bad platform doesn't mask
-  # the others.
+  # linux, Apple Silicon, and free-threaded Apple Silicon, on each dev Python,
+  # plus windows x64 on 3.14. Each leg pulls only the wheel matching its
+  # (runner, interpreter) and asserts it installs and imports as a binary
+  # wheel. fail-fast is off so one bad platform doesn't mask the others.
   smoke-install:
     needs: [compute-version, build-publish]
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run == false }}
     name: smoke-install (${{ matrix.name }})
     runs-on: ${{ matrix.runs-on }}
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -106,6 +109,10 @@ jobs:
             runs-on: macos-latest
             python: "3.14t"
             wheel-glob: "*cp314-cp314t-macosx*arm64*.whl"
+          - name: windows-x64-py314
+            runs-on: windows-2022
+            python: "3.14"
+            wheel-glob: "*cp314-cp314-win_amd64.whl"
           - name: linux-x86_64-py315
             runs-on: ubuntu-22.04
             python: "3.15"
