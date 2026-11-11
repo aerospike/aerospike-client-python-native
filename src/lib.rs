@@ -27,6 +27,7 @@ use indexmap::IndexMap;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::task::Poll;
 
 use pyo3::exceptions::{PyException, PyStopAsyncIteration, PyValueError};
 use pyo3::exceptions::PyTypeError;
@@ -62,6 +63,7 @@ mod operations;
 mod policies;
 mod query_plan;
 mod cluster;
+mod stream_step;
 mod string_ops;
 mod server_error;
 mod metrics;
@@ -86,6 +88,9 @@ pub use metrics::*;
 define_stub_info_gatherer!(stub_info);
 
 use crate::blocking::run_blocking;
+use crate::stream_step::{
+    poll_buffered, ready_step, yield_first_step, BufferedStreak, StepSource, Taken,
+};
 use crate::cdt::ctx_to_vec;
 use crate::operations::{
     bins_flag, bins_from_dict, bins_from_dict_list, convert_ops_with_ctx_to_core,
@@ -822,10 +827,12 @@ use crate::operations::{
     ///
     /// **Bridge routing**: an async-constructed stream
     /// (`Client.batch_stream`) carries the originating Client's
-    /// `CompletionBridge`, so each `__anext__` future is loop-affinity-
-    /// checked and spawned on the same per-Client Tokio runtime as the
-    /// Client itself — preserving AsyncPool's per-Client runtime isolation
-    /// invariant for streaming. A sync-constructed stream
+    /// `CompletionBridge`, so each `__anext__` call is loop-affinity-
+    /// checked and each wait for a row not yet received is spawned on the
+    /// same per-Client Tokio runtime as the Client itself — preserving
+    /// AsyncPool's per-Client runtime isolation invariant for streaming.
+    /// A row already received is handed out on the event loop thread
+    /// without a spawn. A sync-constructed stream
     /// (`Client.batch_stream_blocking`) has no bridge and rejects
     /// `__anext__` with a clear error: use sync iteration on those, or
     /// recreate the stream via `batch_stream` in an async context.
@@ -836,7 +843,7 @@ use crate::operations::{
         subclass,
     )]
     pub struct BatchRecordStream {
-        inner: Arc<Mutex<Option<BoxedBatchStream>>>,
+        inner: SharedBatchStream,
         // Some when built from the async path (`Client::batch_stream`);
         // None when built from `Client::batch_stream_blocking`.
         bridge: Option<completion::CompletionBridge>,
@@ -846,6 +853,86 @@ use crate::operations::{
         // observe the latch from inside the async block, matching the path
         // the `None` receiver takes to `StopAsyncIteration`.
         closed: Arc<AtomicBool>,
+        // Rows handed out in a row without suspending the consumer; see
+        // `stream_step`.
+        buffered_streak: BufferedStreak,
+    }
+
+    type SharedBatchStream = Arc<Mutex<Option<BoxedBatchStream>>>;
+
+    /// Take the next row on the calling (loop) thread if one is buffered.
+    fn try_take_batch_row(
+        py: Python<'_>,
+        inner: &SharedBatchStream,
+        closed: &AtomicBool,
+    ) -> Taken {
+        if closed.load(Ordering::Acquire) {
+            return Taken::Ready(Err(PyStopAsyncIteration::new_err(())));
+        }
+        // A spawned step holding the lock is waiting on the stream; queue
+        // behind it rather than take a row out from under it.
+        let Ok(mut guard) = inner.try_lock() else {
+            return Taken::Pending;
+        };
+        let Some(stream) = guard.as_mut() else {
+            return Taken::Ready(Err(PyStopAsyncIteration::new_err(())));
+        };
+        match poll_buffered(stream.as_mut()) {
+            Poll::Ready(Some(Ok((idx, br)))) => {
+                Taken::Ready((idx, BatchRecord::new(br)).into_py_any(py))
+            }
+            Poll::Ready(Some(Err(e))) => Taken::Ready(Err(PyErr::from(RustClientError(e)))),
+            Poll::Ready(None) => Taken::Ready(Err(PyStopAsyncIteration::new_err(()))),
+            Poll::Pending => Taken::Pending,
+        }
+    }
+
+    /// Wait for the next row on the client's Tokio runtime.
+    fn spawn_next_batch_row(
+        py: Python<'_>,
+        bridge: &completion::CompletionBridge,
+        inner: SharedBatchStream,
+        closed: Arc<AtomicBool>,
+    ) -> PyResult<Py<PyAny>> {
+        completion::batched_future_into_py(bridge, py, async move {
+            use futures::StreamExt;
+            if closed.load(Ordering::Acquire) {
+                return Err(PyStopAsyncIteration::new_err(()));
+            }
+            let mut guard = inner.lock().await;
+            let next = match guard.as_mut() {
+                Some(stream) => stream.as_mut().next().await,
+                None => None,
+            };
+            // Return a plain (Send) Rust value; the CompletionBridge's
+            // converter builds the Python tuple on the drainer/loop thread.
+            // Never `Python::attach` here — this runs on a Tokio worker, and
+            // registering a PyThreadState on a worker segfaults on
+            // free-threaded finalization teardown (see the invariant in
+            // waker.rs and the lazy pattern in errors.rs).
+            match next {
+                Some(Ok((idx, br))) => Ok((idx, BatchRecord::new(br))),
+                Some(Err(e)) => Err(PyErr::from(RustClientError(e))),
+                None => Err(PyStopAsyncIteration::new_err(())),
+            }
+        })
+        .map(|bound| bound.unbind())
+    }
+
+    struct BatchStreamSource {
+        inner: SharedBatchStream,
+        closed: Arc<AtomicBool>,
+        bridge: completion::CompletionBridge,
+    }
+
+    impl StepSource for BatchStreamSource {
+        fn try_take(&self, py: Python<'_>) -> Taken {
+            try_take_batch_row(py, &self.inner, &self.closed)
+        }
+
+        fn spawn_next(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+            spawn_next_batch_row(py, &self.bridge, self.inner.clone(), self.closed.clone())
+        }
     }
 
     #[gen_stub_pymethods]
@@ -859,12 +946,13 @@ use crate::operations::{
             type_repr="typing.Awaitable[typing.Tuple[builtins.int, BatchRecord]]",
             imports=("typing", "aerospike_native"),
         ))]
-        fn __anext__<'a>(&'a mut self, py: Python<'a>) -> PyResult<Py<PyAny>> {
-            // Route through the originating Client's CompletionBridge so
-            // each yield respects loop-affinity and the per-Client Tokio
-            // runtime (AsyncPool isolation). A sync-built stream has no
-            // bridge — surface that as an explicit refusal rather than
-            // silently routing through the global runtime.
+        fn __anext__(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+            // A wait for a row not yet received routes through the
+            // originating Client's CompletionBridge so it respects
+            // loop-affinity and the per-Client Tokio runtime (AsyncPool
+            // isolation). A sync-built stream has no bridge — surface that
+            // as an explicit refusal rather than silently routing through
+            // the global runtime.
             let bridge = self.bridge.as_ref().ok_or_else(|| {
                 pyo3::exceptions::PyRuntimeError::new_err(
                     "Cannot async-iterate a BatchRecordStream created via \
@@ -873,31 +961,33 @@ use crate::operations::{
                      via Client.batch_stream() in an async context.",
                 )
             })?;
-            let inner = self.inner.clone();
-            let closed = self.closed.clone();
-            completion::batched_future_into_py(bridge, py, async move {
-                use futures::StreamExt;
-                if closed.load(Ordering::Acquire) {
-                    return Err(PyStopAsyncIteration::new_err(()));
+            // A buffered row never reaches `batched_future_into_py`, so the
+            // check it makes has to happen here to cover every step.
+            bridge.check_owning_loop(py)?;
+            if self.buffered_streak.is_due() {
+                self.buffered_streak.reset();
+                // The loop is about to get a turn; let it find this client's
+                // finished operations ready to resume.
+                bridge.deliver_queued(py);
+                return yield_first_step(
+                    py,
+                    Box::new(BatchStreamSource {
+                        inner: self.inner.clone(),
+                        closed: self.closed.clone(),
+                        bridge: bridge.clone(),
+                    }),
+                );
+            }
+            match try_take_batch_row(py, &self.inner, &self.closed) {
+                Taken::Ready(result) => {
+                    self.buffered_streak.extend();
+                    ready_step(py, result)
                 }
-                let mut guard = inner.lock().await;
-                let next = match guard.as_mut() {
-                    Some(stream) => stream.as_mut().next().await,
-                    None => None,
-                };
-                // Return a plain (Send) Rust value; the CompletionBridge's
-                // converter builds the Python tuple on the drainer/loop thread.
-                // Never `Python::attach` here — this runs on a Tokio worker, and
-                // registering a PyThreadState on a worker segfaults on
-                // free-threaded finalization teardown (see the invariant in
-                // waker.rs and the lazy pattern in errors.rs).
-                match next {
-                    Some(Ok((idx, br))) => Ok((idx, BatchRecord::new(br))),
-                    Some(Err(e)) => Err(PyErr::from(RustClientError(e))),
-                    None => Err(PyStopAsyncIteration::new_err(())),
+                Taken::Pending => {
+                    self.buffered_streak.reset();
+                    spawn_next_batch_row(py, bridge, self.inner.clone(), self.closed.clone())
                 }
-            })
-            .map(|bound| bound.unbind())
+            }
         }
 
         fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
@@ -1651,6 +1741,7 @@ use crate::operations::{
                 _as: raw,
                 _stream: Arc::new(Mutex::new(None)),
                 bridge: None,
+                buffered_streak: BufferedStreak::new(),
             })
         }
 
@@ -1745,6 +1836,7 @@ use crate::operations::{
                 _as: raw,
                 _stream: Arc::new(Mutex::new(None)),
                 bridge: None,
+                buffered_streak: BufferedStreak::new(),
             })
         }
 
@@ -2701,6 +2793,7 @@ use crate::operations::{
                 inner: Arc::new(Mutex::new(Some(stream))),
                 bridge: None,
                 closed: Arc::new(AtomicBool::new(false)),
+                buffered_streak: BufferedStreak::new(),
             })
         }
 
@@ -3797,6 +3890,7 @@ use crate::operations::{
                     inner: Arc::new(Mutex::new(Some(stream))),
                     bridge: Some(stream_bridge),
                     closed: Arc::new(AtomicBool::new(false)),
+                    buffered_streak: BufferedStreak::new(),
                 })
             })
         }
@@ -4284,6 +4378,7 @@ use crate::operations::{
                     _as: res,
                     _stream: Arc::new(Mutex::new(None)),
                     bridge: Some(recordset_bridge),
+                    buffered_streak: BufferedStreak::new(),
                 })
             })
         }
@@ -4382,6 +4477,7 @@ use crate::operations::{
                     _as: res,
                     _stream: Arc::new(Mutex::new(None)),
                     bridge: Some(recordset_bridge),
+                    buffered_streak: BufferedStreak::new(),
                 })
             })
         }
@@ -5252,6 +5348,7 @@ fn _native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(has_any_write_op, m)?)?;
     m.add_function(wrap_pyfunction!(geojson, m)?)?;
     m.add_function(wrap_pyfunction!(refresh_log_levels, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::stream_step::_ready_step, m)?)?;
     m.add_class::<AuthMode>()?;
     m.add_class::<ClientPolicy>()?;
     m.add_class::<WritePolicy>()?;

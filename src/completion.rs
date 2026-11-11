@@ -52,14 +52,15 @@ use crate::waker;
 
 type Converter = Box<dyn FnOnce(Python<'_>) -> PyResult<Py<PyAny>> + Send>;
 
-/// Cross-thread wake transport for a bridge whose owning loop is uvloop under a
-/// free-threaded build. Instead of the waker thread calling
-/// `loop.call_soon_threadsafe` (whose ready-queue mutation trips uvloop's libuv
-/// free-threading race, MagicStack/uvloop #720, unfixed in release 0.22.1), the
-/// waker writes one byte to `tx`; a `loop.add_reader(rx_fd, PipeDrainer)`
-/// callback then runs `drain()` on the loop thread. The foreign thread touches
-/// only a kernel fd — thread-safe by construction — so uvloop's bug cannot fire
-/// on an API we no longer use. Unix + uvloop + FT only (see `should_use_pipe`).
+/// Cross-thread wake transport. Instead of the waker thread calling
+/// `loop.call_soon_threadsafe`, the waker writes one byte to `tx`; a
+/// `loop.add_reader(rx_fd, PipeDrainer)` callback then runs `drain()` on the
+/// loop thread. The foreign thread touches only a kernel fd, which buys two
+/// things: it needs no GIL, so a busy loop thread cannot hold a wake back,
+/// and under uvloop on a free-threaded build it stays off
+/// `call_soon_threadsafe`, whose ready-queue mutation trips uvloop's libuv
+/// free-threading race (MagicStack/uvloop #720, unfixed in release 0.22.1).
+/// Unix only (see `should_use_pipe`).
 #[cfg(unix)]
 struct PipeTransport {
     /// Waker-thread write end. One byte per completion burst; coalesced by the
@@ -97,10 +98,10 @@ pub(crate) struct CompletionInner {
     /// from `ClientPolicy.per_client_runtime_workers`. Held by Arc so the
     /// runtime outlives any in-flight futures.
     client_rt: Option<Arc<ClientRuntime>>,
-    /// Pipe-wake transport. `Some` only when the owning loop is uvloop under a
-    /// free-threaded build (or forced via `AEROSPIKE_PIPE_WAKE=1`); `None` uses
-    /// today's `call_soon_threadsafe` path unchanged. Holds both socketpair
-    /// ends so they close when this `CompletionInner` drops.
+    /// Pipe-wake transport. Set when `should_use_pipe` selects it and the
+    /// loop accepted the reader; empty uses the `call_soon_threadsafe` path.
+    /// Holds both socketpair ends so they close when this `CompletionInner`
+    /// drops.
     ///
     /// Lifetime: the loop-side reader (`add_reader`) holds a `Py<PipeDrainer>`
     /// which holds an `Arc<CompletionInner>`, so the transport lives until the
@@ -112,7 +113,7 @@ pub(crate) struct CompletionInner {
     /// pooled/typical usage (client lifetime ≈ loop lifetime), and only worth
     /// revisiting for high-churn client creation on one long-lived loop.
     #[cfg(unix)]
-    pipe: Option<PipeTransport>,
+    pipe: OnceLock<PipeTransport>,
 }
 
 /// Owned by each `Client`.  Thin wrapper around `Arc<CompletionInner>` so the
@@ -153,7 +154,7 @@ pub(crate) struct PipeDrainer {
 #[pymethods]
 impl PipeDrainer {
     fn __call__(&self, py: Python<'_>) -> PyResult<()> {
-        if let Some(p) = self.inner.pipe.as_ref() {
+        if let Some(p) = self.inner.pipe.get() {
             drain_fd(&p.rx);
         }
         drain(py, &self.inner);
@@ -167,7 +168,7 @@ impl PipeDrainer {
 /// pending and undrained, which the one-per-burst gate makes benign.
 #[cfg(unix)]
 pub(crate) fn pipe_wake(inner: &CompletionInner) -> Option<std::io::Result<()>> {
-    inner.pipe.as_ref().map(|p| {
+    inner.pipe.get().map(|p| {
         let mut writer: &UnixStream = &p.tx;
         match writer.write(b"x") {
             Ok(_) => Ok(()),
@@ -214,17 +215,40 @@ fn loop_is_uvloop(py: Python<'_>, owning_loop: &Py<PyAny>) -> bool {
     .unwrap_or(false)
 }
 
-/// Transport selection. `AEROSPIKE_PIPE_WAKE` = `0` off / `1` force-on (incl.
-/// plain asyncio, for A/B) / `auto` (default) enables only in the racy regime:
-/// uvloop loop AND free-threaded build. Unix-only (Windows has no usable
-/// `add_reader` for this and no uvloop).
+/// How the wake transport was chosen.
 #[cfg(unix)]
-fn should_use_pipe(py: Python<'_>, owning_loop: &Py<PyAny>) -> bool {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PipeChoice {
+    Off,
+    /// Picked by default: a loop that cannot watch the fd falls back to
+    /// `call_soon_threadsafe`.
+    Auto,
+    /// Asked for by name: a loop that cannot watch the fd is an error.
+    Forced,
+}
+
+/// Transport selection. `AEROSPIKE_PIPE_WAKE` = `0` off / `1` force-on /
+/// `auto` (default). Unix-only (Windows has no usable `add_reader` for this
+/// and no uvloop).
+///
+/// `auto` takes the pipe on every GIL build, because there the other path
+/// makes the waker thread take the GIL for each wake, and a loop thread that
+/// stays busy without blocking (a consumer draining buffered stream items)
+/// can keep it waiting for tens of milliseconds. A free-threaded build has
+/// no such wait and takes the pipe only for uvloop, whose
+/// `call_soon_threadsafe` is racy there.
+#[cfg(unix)]
+fn should_use_pipe(py: Python<'_>, owning_loop: &Py<PyAny>) -> PipeChoice {
     match std::env::var("AEROSPIKE_PIPE_WAKE").ok().as_deref() {
-        Some("0") => false,
-        Some("1") => true,
-        Some("auto") | None => is_free_threaded() && loop_is_uvloop(py, owning_loop),
-        Some(_) => false,
+        Some("1") => PipeChoice::Forced,
+        Some("auto") | None => {
+            if !is_free_threaded() || loop_is_uvloop(py, owning_loop) {
+                PipeChoice::Auto
+            } else {
+                PipeChoice::Off
+            }
+        }
+        Some(_) => PipeChoice::Off,
     }
 }
 
@@ -301,18 +325,8 @@ impl CompletionBridge {
         // Ensure the waker thread exists before any completion can fire.
         waker::ensure_waker(py)?;
 
-        // Select the wake transport up front (runs on the loop thread under
-        // GIL). `None` keeps every downstream path byte-identical to today.
         #[cfg(unix)]
-        let pipe = if should_use_pipe(py, &owning_loop) {
-            Some(make_socketpair().map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!(
-                    "pipe-wake: socketpair creation failed: {e}"
-                ))
-            })?)
-        } else {
-            None
-        };
+        let pipe_choice = should_use_pipe(py, &owning_loop);
 
         let inner = Arc::new(CompletionInner {
             queue: Mutex::new(Vec::new()),
@@ -322,26 +336,83 @@ impl CompletionBridge {
             drainer: OnceLock::new(),
             client_rt,
             #[cfg(unix)]
-            pipe,
+            pipe: OnceLock::new(),
         });
         let drainer = Py::new(py, CompletionDrainer { inner: inner.clone() })?;
         let _ = inner.drainer.set(drainer);
 
         // Register the loop-side reader for the pipe transport. The loop is
         // running here (bridge construction is awaited), so add_reader takes
-        // effect immediately — before the first completion can fire.
+        // effect immediately — before the first completion can fire. The
+        // transport is installed only once the loop has accepted the reader,
+        // so a bridge never wakes through a pipe nobody watches.
         #[cfg(unix)]
         {
-            if let Some(p) = inner.pipe.as_ref() {
-                let rx_fd = p.rx.as_raw_fd();
+            if pipe_choice != PipeChoice::Off {
+                let transport = make_socketpair().map_err(|e| {
+                    pyo3::exceptions::PyRuntimeError::new_err(format!(
+                        "pipe-wake: socketpair creation failed: {e}"
+                    ))
+                })?;
                 let reader = Py::new(py, PipeDrainer { inner: inner.clone() })?;
-                inner.owning_loop.bind(py).call_method1(
+                let added = inner.owning_loop.bind(py).call_method1(
                     pyo3::intern!(py, "add_reader"),
-                    (rx_fd, reader),
-                )?;
+                    (transport.rx.as_raw_fd(), reader),
+                );
+                match added {
+                    Ok(_) => {
+                        let _ = inner.pipe.set(transport);
+                    }
+                    // Not every loop can watch an fd (a proactor-style loop
+                    // raises NotImplementedError).
+                    Err(_) if pipe_choice == PipeChoice::Auto => {}
+                    Err(e) => return Err(e),
+                }
             }
         }
         Ok(CompletionBridge { inner })
+    }
+
+    /// Reject a call made from an event loop other than the bridge's own.
+    ///
+    /// A diagnostic, not a safety invariant, so it is compiled into debug
+    /// builds only (~0.5-1 µs per op saved in release). In a release build
+    /// a spawned wait still fails, later: awaiting its future from another
+    /// loop raises. A buffered stream step creates no future, so in a
+    /// release build it is not checked at all and succeeds from any loop;
+    /// the stream's lock keeps that memory-safe.
+    #[cfg_attr(not(debug_assertions), allow(unused_variables, clippy::unnecessary_wraps))]
+    pub(crate) fn check_owning_loop(&self, py: Python<'_>) -> PyResult<()> {
+        #[cfg(debug_assertions)]
+        {
+            let locals = pyo3_asyncio::get_current_locals(py)?;
+            let event_loop = locals.event_loop(py);
+            if !event_loop.is(self.inner.owning_loop.bind(py)) {
+                return Err(pyo3::exceptions::PyRuntimeError::new_err(
+                    "Aerospike Client used from a different event loop than the one that created it. \
+                     One Client must be paired with one event loop — construct a separate Client per \
+                     loop (AsyncPool does this automatically).",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Deliver completions already queued on this bridge, from the loop
+    /// thread, without waiting for a wake to reach the drainer.
+    ///
+    /// For a consumer that is about to yield after a run of steps that never
+    /// blocked the loop. Without the pipe transport on a GIL build, the waker
+    /// thread cannot get the GIL from such a loop for tens of milliseconds,
+    /// and every operation on this client would wait that long. With the
+    /// pipe the wake does arrive, but only after the loop's next poll and a
+    /// reader callback; delivering here resumes the waiting tasks in the
+    /// turn the consumer is giving up.
+    pub(crate) fn deliver_queued(&self, py: Python<'_>) {
+        // `drain_scheduled` is left alone: a wake already on its way stays
+        // the one outstanding wake, so completions that queue up meanwhile
+        // do not each send another. Its drain then finds the queue empty.
+        deliver(py, &self.inner);
     }
 
     /// Arc to the shared inner state. Used by per-op-delivery coalesced-submit
@@ -446,6 +517,10 @@ fn fail_pr(pr: PendingResult, msg: &'static str) {
 fn drain(py: Python<'_>, inner: &Arc<CompletionInner>) {
     // Allow new batches to schedule while we process.
     inner.drain_scheduled.store(false, Ordering::Release);
+    deliver(py, inner);
+}
+
+fn deliver(py: Python<'_>, inner: &Arc<CompletionInner>) {
     let pending: Vec<PendingResult> =
         std::mem::take(&mut *inner.queue.lock().unwrap());
     for pr in pending {
@@ -488,22 +563,7 @@ where
     F: Future<Output = PyResult<T>> + Send + 'static,
     T: for<'a> IntoPyObject<'a> + Send + 'static,
 {
-    // Cross-loop misuse fails downstream at set_result time with an
-    // InvalidStateError anyway; the up-front check is a diagnostic, not a
-    // safety invariant, so reserve it for debug builds.  Phase 1 of the
-    // CompletionBridge optimization plan (~0.5-1 µs per op saved).
-    #[cfg(debug_assertions)]
-    {
-        let locals = pyo3_asyncio::get_current_locals(py)?;
-        let event_loop = locals.event_loop(py);
-        if !event_loop.is(bridge.inner.owning_loop.bind(py)) {
-            return Err(pyo3::exceptions::PyRuntimeError::new_err(
-                "Aerospike Client used from a different event loop than the one that created it. \
-                 One Client must be paired with one event loop — construct a separate Client per \
-                 loop (AsyncPool does this automatically).",
-            ));
-        }
-    }
+    bridge.check_owning_loop(py)?;
     let event_loop = bridge.inner.owning_loop.bind(py);
     let py_fut =
         event_loop.call_method0(pyo3::intern!(py, "create_future"))?;
