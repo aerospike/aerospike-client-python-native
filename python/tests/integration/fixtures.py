@@ -15,6 +15,7 @@
 
 import asyncio
 import time
+import types
 
 import pytest
 from aerospike_native import (
@@ -121,6 +122,41 @@ async def wait_for_scan_visible(
     raise TimeoutError(
         f"{ns}.{set_name}: only {count}/{expected} records scan-visible after seeding"
     )
+
+
+class AbandonedAwait(Exception):
+    """Raised by :func:`trace_await` when it drops an awaitable mid-flight."""
+
+
+@types.coroutine
+def trace_await(awaitable, trace, *, abandon_on=None):
+    """Await ``awaitable`` and record how it suspended.
+
+    Appends one tuple to ``trace`` with an entry per suspension: ``"loop"``
+    for a bare yield to the event loop, ``"future"`` for a wait on a future.
+    An empty tuple means the awaitable resolved without suspending at all.
+
+    ``abandon_on`` names a suspension kind; the first time the awaitable
+    suspends that way it is dropped and :class:`AbandonedAwait` is raised,
+    which is what a cancellation landing at that point does to it.
+    """
+    steps = awaitable.__await__()
+    suspensions = []
+    try:
+        while True:
+            try:
+                value = next(steps)
+            except StopIteration as stop:
+                return stop.value
+            kind = "loop" if value is None else "future"
+            suspensions.append(kind)
+            if kind == abandon_on:
+                if value is not None:
+                    value.cancel()
+                raise AbandonedAwait(kind)
+            yield value
+    finally:
+        trace.append(tuple(suspensions))
 
 
 class TestFixtureConnection:

@@ -16,6 +16,7 @@
 use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::task::Poll;
 
 use pyo3::exceptions::{PyKeyError, PyValueError};
 use pyo3::exceptions::PyStopAsyncIteration;
@@ -34,6 +35,10 @@ use crate::errors::RustClientError;
 use crate::expressions::FilterExpression;
 use crate::operations::bins_flag;
 use crate::record::{Key, PythonValue, Record};
+use crate::stream_step::{
+    poll_buffered, ready_step, yield_first_step, BufferedStreak, Parking, StepSource, Taken,
+    YIELD_INTERVAL,
+};
 
     ////////////////////////////////////////////////////////////////////////////////////////////
     //
@@ -801,13 +806,174 @@ use crate::record::{Key, PythonValue, Record};
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
     pub struct Recordset {
         pub(crate) _as: Arc<aerospike_core::Recordset>,
-        pub(crate) _stream: Arc<Mutex<Option<Pin<Box<RecordStream>>>>>,
+        pub(crate) _stream: SharedRecordStream,
         // Some when built from `Client::query` (async); None when built from
         // `Client::query_blocking`. Async iteration / `partition_filter()`
-        // route through the bridge for loop-affinity + per-Client runtime;
-        // a None bridge surfaces an explicit refusal rather than silently
-        // routing through the global runtime.
+        // take their loop-affinity check and per-Client runtime from the
+        // bridge (a buffered record is handed out on the loop thread and
+        // only a wait is spawned); a None bridge surfaces an explicit
+        // refusal rather than silently routing through the global runtime.
         pub(crate) bridge: Option<crate::completion::CompletionBridge>,
+        // Records handed out in a row without suspending the consumer; see
+        // `stream_step`.
+        pub(crate) buffered_streak: BufferedStreak,
+    }
+
+    type SharedRecordStream = Arc<Mutex<Option<Pin<Box<Parking<RecordStream>>>>>>;
+
+    fn open_stream(recordset: &Arc<aerospike_core::Recordset>) -> Pin<Box<Parking<RecordStream>>> {
+        Box::pin(Parking::new(recordset.clone().into_stream()))
+    }
+
+    /// Take the next record on the calling (loop) thread if one is buffered.
+    fn try_take_record(
+        py: Python<'_>,
+        recordset: &Arc<aerospike_core::Recordset>,
+        stream: &SharedRecordStream,
+    ) -> Taken {
+        // A spawned step holding the lock is waiting on the stream; queue
+        // behind it rather than take a record out from under it.
+        let Ok(mut guard) = stream.try_lock() else {
+            return Taken::Pending;
+        };
+        let stream = guard.get_or_insert_with(|| open_stream(recordset));
+        match poll_buffered(stream.as_mut()) {
+            Poll::Ready(Some(Ok(rec))) => Taken::Ready(
+                Record { _as: rec, cached_bins: None, cached_results: None }.into_py_any(py),
+            ),
+            Poll::Ready(Some(Err(e))) => Taken::Ready(Err(PyErr::from(RustClientError(e)))),
+            Poll::Ready(None) => Taken::Ready(Err(PyStopAsyncIteration::new_err(
+                "Recordset iteration complete",
+            ))),
+            Poll::Pending => Taken::Pending,
+        }
+    }
+
+    /// Wait for the next record on the client's Tokio runtime.
+    fn spawn_next_record(
+        py: Python<'_>,
+        bridge: &crate::completion::CompletionBridge,
+        recordset: Arc<aerospike_core::Recordset>,
+        stream_mutex: SharedRecordStream,
+    ) -> PyResult<Py<PyAny>> {
+        crate::completion::batched_future_into_py(bridge, py, async move {
+            let mut stream_opt = stream_mutex.lock().await;
+            let stream = stream_opt.get_or_insert_with(|| open_stream(&recordset));
+            use futures::StreamExt;
+            // Return a plain (Send) Rust value; the CompletionBridge's
+            // converter builds the Python `Record` on the drainer/loop
+            // thread. Never `Python::attach` here — this runs on a Tokio
+            // worker, and registering a PyThreadState on a worker
+            // segfaults on free-threaded finalization teardown (see the
+            // invariant in waker.rs and the lazy pattern in errors.rs).
+            // `PyErr::from(RustClientError(..))` is lazy, so the error
+            // arm never attaches on the worker either.
+            match stream.as_mut().next().await {
+                Some(Ok(rec)) => Ok(Record { _as: rec, cached_bins: None, cached_results: None }),
+                Some(Err(e)) => Err(PyErr::from(RustClientError(e))),
+                None => Err(PyStopAsyncIteration::new_err("Recordset iteration complete")),
+            }
+        })
+        .map(|bound| bound.unbind())
+    }
+
+    /// Take up to `max_records` buffered records on the calling (loop)
+    /// thread, and report how many were taken.
+    fn try_take_batch(
+        py: Python<'_>,
+        recordset: &Arc<aerospike_core::Recordset>,
+        stream: &SharedRecordStream,
+        max_records: usize,
+    ) -> (Taken, u32) {
+        let Ok(mut guard) = stream.try_lock() else {
+            return (Taken::Pending, 0);
+        };
+        let stream = guard.get_or_insert_with(|| open_stream(recordset));
+        // One batch is one uninterrupted hold on the loop, so it is bounded
+        // like a run of single steps whatever the caller asks for.
+        let max_records = max_records.min(YIELD_INTERVAL as usize);
+        let mut records: Vec<Record> = Vec::with_capacity(max_records);
+        while records.len() < max_records {
+            match poll_buffered(stream.as_mut()) {
+                Poll::Ready(Some(Ok(rec))) => {
+                    records.push(Record { _as: rec, cached_bins: None, cached_results: None });
+                }
+                Poll::Ready(Some(Err(e))) if records.is_empty() => {
+                    return (Taken::Ready(Err(PyErr::from(RustClientError(e)))), 0);
+                }
+                // The end of the stream with nothing gathered is the empty
+                // batch itself.
+                Poll::Ready(None) if records.is_empty() => break,
+                Poll::Ready(terminal) => {
+                    stream.as_mut().get_mut().park(terminal);
+                    break;
+                }
+                Poll::Pending if records.is_empty() => return (Taken::Pending, 0),
+                Poll::Pending => break,
+            }
+        }
+        let taken = u32::try_from(records.len()).unwrap_or(u32::MAX);
+        (Taken::Ready(records.into_py_any(py)), taken)
+    }
+
+    /// Wait for the next record on the client's Tokio runtime and resolve
+    /// with it as a batch of one.
+    ///
+    /// Only the record that was waited for: a record taken on the worker is
+    /// already behind the resume cursor, and a cancelled wait drops what it
+    /// took. The records that arrived with it stay buffered for the next call.
+    fn spawn_next_batch(
+        py: Python<'_>,
+        bridge: &crate::completion::CompletionBridge,
+        recordset: Arc<aerospike_core::Recordset>,
+        stream_mutex: SharedRecordStream,
+    ) -> PyResult<Py<PyAny>> {
+        crate::completion::batched_future_into_py(bridge, py, async move {
+            let mut stream_opt = stream_mutex.lock().await;
+            let stream = stream_opt.get_or_insert_with(|| open_stream(&recordset));
+            use futures::StreamExt;
+            match stream.as_mut().next().await {
+                Some(Ok(rec)) => {
+                    Ok(vec![Record { _as: rec, cached_bins: None, cached_results: None }])
+                }
+                Some(Err(e)) => Err(PyErr::from(RustClientError(e))),
+                None => Ok(Vec::new()),
+            }
+        })
+        .map(|bound| bound.unbind())
+    }
+
+    struct RecordsetBatchSource {
+        recordset: Arc<aerospike_core::Recordset>,
+        stream: SharedRecordStream,
+        bridge: crate::completion::CompletionBridge,
+        max_records: usize,
+    }
+
+    impl StepSource for RecordsetBatchSource {
+        fn try_take(&self, py: Python<'_>) -> Taken {
+            try_take_batch(py, &self.recordset, &self.stream, self.max_records).0
+        }
+
+        fn spawn_next(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+            spawn_next_batch(py, &self.bridge, self.recordset.clone(), self.stream.clone())
+        }
+    }
+
+    struct RecordsetSource {
+        recordset: Arc<aerospike_core::Recordset>,
+        stream: SharedRecordStream,
+        bridge: crate::completion::CompletionBridge,
+    }
+
+    impl StepSource for RecordsetSource {
+        fn try_take(&self, py: Python<'_>) -> Taken {
+            try_take_record(py, &self.recordset, &self.stream)
+        }
+
+        fn spawn_next(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+            spawn_next_record(py, &self.bridge, self.recordset.clone(), self.stream.clone())
+        }
     }
 
     impl Clone for Recordset {
@@ -821,6 +987,7 @@ use crate::record::{Key, PythonValue, Record};
                 _as: self._as.clone(),
                 _stream: Arc::new(Mutex::new(None)),
                 bridge: None,
+                buffered_streak: BufferedStreak::new(),
             }
         }
     }
@@ -874,7 +1041,7 @@ use crate::record::{Key, PythonValue, Record};
             slf
         }
 
-        fn __anext__<'a>(&'a mut self, py: Python<'a>) -> PyResult<Py<PyAny>> {
+        fn __anext__(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
             let bridge = self.bridge.as_ref().ok_or_else(|| {
                 pyo3::exceptions::PyRuntimeError::new_err(
                     "Cannot async-iterate a Recordset created via query_blocking. \
@@ -882,38 +1049,94 @@ use crate::record::{Key, PythonValue, Record};
                      the recordset via Client.query() in an async context.",
                 )
             })?;
-            let recordset = self._as.clone();
-            let stream_mutex = self._stream.clone();
-
-            crate::completion::batched_future_into_py(bridge, py, async move {
-                // Initialize stream if needed, then poll
-                let mut stream_opt = stream_mutex.lock().await;
-                if stream_opt.is_none() {
-                    *stream_opt = Some(Box::pin(recordset.clone().into_stream()));
+            // A buffered record never reaches `batched_future_into_py`, so
+            // the check it makes has to happen here to cover every step.
+            bridge.check_owning_loop(py)?;
+            if self.buffered_streak.is_due() {
+                self.buffered_streak.reset();
+                // The loop is about to get a turn; let it find this client's
+                // finished operations ready to resume.
+                bridge.deliver_queued(py);
+                return yield_first_step(
+                    py,
+                    Box::new(RecordsetSource {
+                        recordset: self._as.clone(),
+                        stream: self._stream.clone(),
+                        bridge: bridge.clone(),
+                    }),
+                );
+            }
+            match try_take_record(py, &self._as, &self._stream) {
+                Taken::Ready(result) => {
+                    self.buffered_streak.extend();
+                    ready_step(py, result)
                 }
-
-                if let Some(ref mut stream) = *stream_opt {
-                    use futures::StreamExt;
-                    // Return a plain (Send) Rust value; the CompletionBridge's
-                    // converter builds the Python `Record` on the drainer/loop
-                    // thread. Never `Python::attach` here — this runs on a Tokio
-                    // worker, and registering a PyThreadState on a worker
-                    // segfaults on free-threaded finalization teardown (see the
-                    // invariant in waker.rs and the lazy pattern in errors.rs).
-                    // `PyErr::from(RustClientError(..))` is lazy, so the error
-                    // arm never attaches on the worker either.
-                    match stream.as_mut().next().await {
-                        Some(Ok(rec)) => {
-                            Ok(Record { _as: rec, cached_bins: None, cached_results: None })
-                        }
-                        Some(Err(e)) => Err(PyErr::from(RustClientError(e))),
-                        None => Err(PyStopAsyncIteration::new_err("Recordset iteration complete")),
-                    }
-                } else {
-                    Err(PyStopAsyncIteration::new_err("Recordset iteration complete"))
+                Taken::Pending => {
+                    // The spawned wait suspends the consumer, so the loop
+                    // gets its turn without a separate yield.
+                    self.buffered_streak.reset();
+                    spawn_next_record(py, bridge, self._as.clone(), self._stream.clone())
                 }
-            })
-            .map(|bound| bound.unbind())
+            }
+        }
+
+        /// Internal: take the records that have already arrived, up to
+        /// ``max_records`` and never more than 64. Not part of the public
+        /// API; the SDK's query streams use it to spare an awaitable per
+        /// record.
+        ///
+        /// Awaiting the result gives a list of at least one record, or an
+        /// empty list once the stream has ended. When nothing has arrived
+        /// yet it waits for one record and returns it alone, so a batch
+        /// never waits to fill up. It reads the same stream as ``async
+        /// for`` and can be mixed with it.
+        ///
+        /// Every record in a returned batch counts as read. The cursor that
+        /// :meth:`partition_filter` reports is already past all of them, so
+        /// a caller that stops partway through a batch and later resumes
+        /// from that cursor never sees the rest of the batch.
+        ///
+        /// A query error raises. Records that arrived before the failure
+        /// are returned first, and the next call raises.
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.List[Record]]", imports=("typing", "aerospike_native")))]
+        #[pyo3(name = "_next_batch")]
+        fn next_batch(&mut self, py: Python<'_>, max_records: usize) -> PyResult<Py<PyAny>> {
+            if max_records == 0 {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "max_records must be at least 1",
+                ));
+            }
+            let bridge = self.bridge.as_ref().ok_or_else(|| {
+                pyo3::exceptions::PyRuntimeError::new_err(
+                    "Cannot await _next_batch() on a Recordset created via \
+                     query_blocking. Use sync iteration (`for record in recordset:`) \
+                     or recreate the recordset via Client.query() in an async context.",
+                )
+            })?;
+            bridge.check_owning_loop(py)?;
+            if self.buffered_streak.is_due() {
+                self.buffered_streak.reset();
+                bridge.deliver_queued(py);
+                return yield_first_step(
+                    py,
+                    Box::new(RecordsetBatchSource {
+                        recordset: self._as.clone(),
+                        stream: self._stream.clone(),
+                        bridge: bridge.clone(),
+                        max_records,
+                    }),
+                );
+            }
+            match try_take_batch(py, &self._as, &self._stream, max_records) {
+                (Taken::Ready(result), taken) => {
+                    self.buffered_streak.extend_by(taken);
+                    ready_step(py, result)
+                }
+                (Taken::Pending, _) => {
+                    self.buffered_streak.reset();
+                    spawn_next_batch(py, bridge, self._as.clone(), self._stream.clone())
+                }
+            }
         }
 
         // Blocking iteration — returned by `Client.query_blocking()`.  Same
@@ -945,7 +1168,7 @@ use crate::record::{Key, PythonValue, Record};
                 crate::blocking::block_on(rt, async move {
                     let mut stream_opt = stream_mutex.lock().await;
                     if stream_opt.is_none() {
-                        *stream_opt = Some(Box::pin(recordset.clone().into_stream()));
+                        *stream_opt = Some(open_stream(&recordset));
                     }
                     let stream = stream_opt.as_mut().unwrap();
                     use futures::StreamExt;

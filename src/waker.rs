@@ -124,14 +124,35 @@ fn waker_loop_py(py: Python<'_>) {
         // `Send` (Receiver is !Sync) — go straight to the FFI.  Same
         // mechanism PyO3's `detach` uses internally; we just sidestep its
         // closure-Send bound.
+        //
+        // A pipe-transport wake is one write to a kernel fd, so it is sent
+        // from inside the detached section. Re-attaching for it would make
+        // every wake wait for the GIL, and a loop thread that is busy without
+        // ever blocking can hold that wait for many milliseconds. Only a
+        // wake that has to touch Python leaves the detached section.
         let token = unsafe {
             let saved = pyo3::ffi::PyEval_SaveThread();
-            let result = rx.recv();
+            let result = loop {
+                match rx.recv() {
+                    Ok(inner) => {
+                        #[cfg(unix)]
+                        {
+                            match crate::completion::pipe_wake(&inner) {
+                                Some(Ok(())) => continue,
+                                Some(Err(_)) => break Ok((inner, true)),
+                                None => {}
+                            }
+                        }
+                        break Ok((inner, false));
+                    }
+                    Err(e) => break Err(e),
+                }
+            };
             pyo3::ffi::PyEval_RestoreThread(saved);
             result
         };
-        let inner = match token {
-            Ok(i) => i,
+        let (inner, pipe_broken) = match token {
+            Ok(t) => t,
             // All senders dropped — interpreter shutdown.  Exit cleanly.
             Err(_) => return,
         };
@@ -144,21 +165,12 @@ fn waker_loop_py(py: Python<'_>) {
             return;
         }
 
-        // Pipe-wake transport (uvloop + FT): write one byte to the loop's
-        // self-pipe instead of `call_soon_threadsafe`. No Python touched — the
-        // foreign thread only writes a kernel fd — so uvloop's #720 ready-queue
-        // race cannot fire. `pipe_wake` returns `None` for the default path.
-        #[cfg(unix)]
-        {
-            if let Some(res) = crate::completion::pipe_wake(&inner) {
-                if res.is_err() {
-                    // Write end broke (loop's read end closed): latch + fail so
-                    // callers don't hang, mirroring the call_soon-failure path.
-                    inner.closed.store(true, Ordering::Release);
-                    inner.fail_all_pending();
-                }
-                continue;
-            }
+        if pipe_broken {
+            // Write end broke (loop's read end closed): latch + fail so
+            // callers don't hang, mirroring the call_soon-failure path.
+            inner.closed.store(true, Ordering::Release);
+            inner.fail_all_pending();
+            continue;
         }
 
         // We're back attached after detach(); call_soon_threadsafe runs
