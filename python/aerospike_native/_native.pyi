@@ -422,10 +422,12 @@ class BatchRecordStream:
 
     **Bridge routing**: an async-constructed stream
     (`Client.batch_stream`) carries the originating Client's
-    `CompletionBridge`, so each `__anext__` future is loop-affinity-
-    checked and spawned on the same per-Client Tokio runtime as the
-    Client itself — preserving AsyncPool's per-Client runtime isolation
-    invariant for streaming. A sync-constructed stream
+    `CompletionBridge`, so each `__anext__` call is loop-affinity-
+    checked and each wait for a row not yet received is spawned on the
+    same per-Client Tokio runtime as the Client itself — preserving
+    AsyncPool's per-Client runtime isolation invariant for streaming.
+    A row already received is handed out on the event loop thread
+    without a spawn. A sync-constructed stream
     (`Client.batch_stream_blocking`) has no bridge and rejects
     `__anext__` with a clear error: use sync iteration on those, or
     recreate the stream via `batch_stream` in an async context.

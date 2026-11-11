@@ -13,6 +13,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+import asyncio
 import base64
 import os
 import pytest
@@ -28,6 +29,8 @@ from aerospike_native import (
     MapOperation, MapPolicy, MapReturnType, CTX,
 )
 from aerospike_native.exceptions import ServerError, ResultCode, InvalidNamespaceError, RecordNotFound
+
+from fixtures import trace_await
 
 @pytest_asyncio.fixture
 async def client_and_keys():
@@ -1162,6 +1165,58 @@ async def test_batch_stream_async_yields_all_records(client_and_keys):
     assert yielded_key_values == expected_key_values
     for _, br in yielded:
         assert br.result_code == ResultCode.OK
+
+
+async def test_batch_stream_async_buffered_rows_resolve_without_stream_wait(client_and_keys):
+    """Rows already received come back without another wait on the stream."""
+    client, keys, _, bin_name = client_and_keys
+
+    ops = [BatchReadOp(k, [bin_name]) for k in keys]
+    stream = await client.batch_stream(ops)
+    # Long enough for every node response to land in the stream's buffer.
+    await asyncio.sleep(0.3)
+
+    trace = []
+    yielded = []
+    while True:
+        try:
+            idx, br = await trace_await(stream.__anext__(), trace)
+        except StopAsyncIteration:
+            break
+        yielded.append((idx, br.key.value))
+
+    assert sorted(yielded) == sorted((i, k.value) for i, k in enumerate(keys))
+    # No step waits on the stream; a slow run may add a fairness yield.
+    assert len(trace) == len(keys) + 1
+    assert set(trace) <= {(), ("loop",)}
+
+
+async def test_batch_stream_async_buffered_drain_yields_to_the_loop(client_and_keys):
+    """A long run of received rows gives the event loop a turn and keeps every row intact."""
+    client, _, _, bin_name = client_and_keys
+    keys = [Key("test", "batch_stream_many", i) for i in range(150)]
+    wp = WritePolicy()
+    for k in keys:
+        await client.put(k, {bin_name: k.value}, policy=wp)
+
+    stream = await client.batch_stream([BatchReadOp(k, [bin_name]) for k in keys])
+    # Long enough for every node response to land in the stream's buffer.
+    await asyncio.sleep(0.3)
+
+    trace = []
+    yielded = []
+    while True:
+        try:
+            idx, br = await trace_await(stream.__anext__(), trace)
+        except StopAsyncIteration:
+            break
+        assert isinstance(br, BatchRecord)
+        yielded.append((idx, br.record.bins[bin_name]))
+
+    assert sorted(yielded) == [(i, i) for i in range(len(keys))]
+    # At most 64 rows back to back before a step yields to the loop first.
+    assert ("loop",) in trace[:65]
+    assert set(trace) == {(), ("loop",)}
 
 
 async def test_batch_stream_async_per_key_error_inline(client_and_keys):
