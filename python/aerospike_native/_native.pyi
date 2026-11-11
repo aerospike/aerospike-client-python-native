@@ -150,6 +150,7 @@ __all__ = [
     "_LocalClient",
     "_conformance_tls_name_matches",
     "_conformance_translate",
+    "_ready_step",
     "geojson",
     "has_any_write_op",
     "new_client",
@@ -614,10 +615,12 @@ class BatchRecordStream:
 
     **Bridge routing**: an async-constructed stream
     (`Client.batch_stream`) carries the originating Client's
-    `CompletionBridge`, so each `__anext__` future is loop-affinity-
-    checked and spawned on the same per-Client Tokio runtime as the
-    Client itself — preserving AsyncPool's per-Client runtime isolation
-    invariant for streaming. A sync-constructed stream
+    `CompletionBridge`, so each `__anext__` call is loop-affinity-
+    checked and each wait for a row not yet received is spawned on the
+    same per-Client Tokio runtime as the Client itself — preserving
+    AsyncPool's per-Client runtime isolation invariant for streaming.
+    A row already received is handed out on the event loop thread
+    without a spawn. A sync-constructed stream
     (`Client.batch_stream_blocking`) has no bridge and rejects
     `__anext__` with a clear error: use sync iteration on those, or
     recreate the stream via `batch_stream` in an async context.
@@ -6292,6 +6295,27 @@ class Recordset:
     def partition_filter_sync(self) -> typing.Optional[_native.PartitionFilter]: ...
     def __aiter__(self) -> _native.Recordset: ...
     def __anext__(self) -> typing.Any: ...
+    def _next_batch(self, max_records: builtins.int) -> typing.Awaitable[typing.List[Record]]:
+        r"""
+        Internal: take the records that have already arrived, up to
+        ``max_records`` and never more than 64. Not part of the public
+        API; the SDK's query streams use it to spare an awaitable per
+        record.
+
+        Awaiting the result gives a list of at least one record, or an
+        empty list once the stream has ended. When nothing has arrived
+        yet it waits for one record and returns it alone, so a batch
+        never waits to fill up. It reads the same stream as ``async
+        for`` and can be mixed with it.
+
+        Every record in a returned batch counts as read. The cursor that
+        :meth:`partition_filter` reports is already past all of them, so
+        a caller that stops partway through a batch and later resumes
+        from that cursor never sees the rest of the batch.
+
+        A query error raises. Records that arrived before the failure
+        are returned first, and the next call raises.
+        """
     def __iter__(self) -> _native.Recordset: ...
     def __next__(self) -> _native.Record: ...
 
@@ -8991,6 +9015,13 @@ def _conformance_translate(policy: _native.ClientPolicy, node_name: builtins.str
     client built from `policy` uses.
 
     Raises the client's translation-miss error on a strict miss.
+    """
+
+def _ready_step(value: typing.Any) -> typing.Awaitable[typing.Any]:
+    r"""
+    Internal: wrap ``value`` in an awaitable that resolves to it without
+    suspending. Not part of the public API; the SDK's query streams use it to
+    hand out a row they already hold without a coroutine per row.
     """
 
 def geojson(geo_str: builtins.str) -> _native.GeoJSON:
