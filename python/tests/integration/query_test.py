@@ -33,6 +33,7 @@ from aerospike_native import (
     FilterExpression,
     CTX,
     Key,
+    ResultCode,
     WritePolicy,
 )
 from aerospike_native.exceptions import AerospikeError, InvalidNamespaceError
@@ -125,18 +126,15 @@ class TestRecordsetAsyncIteration(TestFixtureConnection):
 
     @pytest.fixture
     async def seeded(self, client):
-        wp = WritePolicy()
+        keys = [Key(self.ns, self.set_name, i) for i in range(self.total)]
+        bins_list = [{"n": i} for i in range(self.total)]
 
-        # Unbounded, the writes open more connections than a small test
-        # server accepts at once.
-        in_flight = asyncio.Semaphore(64)
-
-        async def write(i):
-            async with in_flight:
-                await client.put(Key(self.ns, self.set_name, i), {"n": i}, policy=wp)
-
+        # One batch call rather than a burst of concurrent puts: a server
+        # behind a container port forward resets connections under the burst.
         async def write_all():
-            await asyncio.gather(*(write(i) for i in range(self.total)))
+            results = await client.batch_write(keys, bins_list)
+            failed = [r.result_code for r in results if r.result_code != ResultCode.OK]
+            assert not failed, f"seed batch rejected {len(failed)} records: {failed[:3]}"
 
         await write_all()
         await wait_for_scan_visible(client, self.ns, self.set_name, self.total, write_all)
