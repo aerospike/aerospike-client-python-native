@@ -458,6 +458,139 @@ class TestRecordsetAsyncIteration(TestFixtureConnection):
 
         assert trace == [()]
 
+    async def test_next_batch_drains_every_record_once(self, seeded):
+        records = await self._query(seeded)
+        seen = []
+        sizes = []
+        while batch := await records._next_batch(32):
+            assert all(isinstance(record, Record) for record in batch)
+            sizes.append(len(batch))
+            seen.extend(record.bins["n"] for record in batch)
+
+        assert sorted(seen) == list(range(self.total))
+        assert max(sizes) <= 32
+        # The end of the stream stays an empty batch.
+        assert await records._next_batch(32) == []
+
+    async def test_next_batch_takes_buffered_records_without_suspending(self, seeded):
+        records = await self._query(seeded)
+        first = await records._next_batch(1)
+        assert len(first) == 1
+        await asyncio.sleep(self.buffer_fill)
+
+        trace = []
+        batch = await trace_await(records._next_batch(5), trace)
+        records.close()
+
+        assert len(batch) == 5
+        assert trace == [()]
+
+    async def test_next_batch_is_capped_whatever_is_asked_for(self, seeded):
+        records = await self._query(seeded)
+        await records._next_batch(1)
+        await asyncio.sleep(self.buffer_fill)
+
+        batch = await records._next_batch(10_000)
+        records.close()
+
+        assert len(batch) == 64
+
+    async def test_next_batch_drain_yields_to_other_tasks(self, seeded):
+        records = await self._query(seeded)
+        await records._next_batch(1)
+        await asyncio.sleep(self.buffer_fill)
+
+        ticks = 0
+
+        async def ticker():
+            nonlocal ticks
+            while True:
+                ticks += 1
+                await asyncio.sleep(0)
+
+        task = asyncio.ensure_future(ticker())
+        try:
+            drained = 0
+            while drained < 640:
+                drained += len(await records._next_batch(32))
+            ticks_during_drain = ticks
+        finally:
+            task.cancel()
+            records.close()
+
+        # A step yields first once 64 records have gone out in a row, and
+        # the batch it then takes is not counted toward the next run.
+        assert ticks_during_drain >= 640 // (64 + 32)
+
+    async def test_next_batch_mixes_with_async_for(self, seeded):
+        records = await self._query(seeded)
+        seen = [record.bins["n"] for record in await records._next_batch(16)]
+        async for record in records:
+            seen.append(record.bins["n"])
+            if len(seen) == 500:
+                break
+        while batch := await records._next_batch(16):
+            seen.extend(record.bins["n"] for record in batch)
+
+        assert sorted(seen) == list(range(self.total))
+
+    async def test_next_batch_whole_batches_then_resume_loses_no_record(self, seeded):
+        records = await self._query(seeded)
+        seen = []
+        while len(seen) < 200:
+            seen.extend(record.bins["n"] for record in await records._next_batch(32))
+        records.close()
+        resume_from = await records.partition_filter()
+        assert resume_from is not None
+
+        resumed = await self._query(seeded, partition_filter=resume_from)
+        while batch := await resumed._next_batch(32):
+            seen.extend(record.bins["n"] for record in batch)
+
+        assert sorted(seen) == list(range(self.total))
+
+    async def test_next_batch_empty_and_single_results(self, client):
+        stmt = Statement(self.ns, "rs_iter_no_such_set", [])
+        records = await client.query(stmt, PartitionFilter.all(), policy=QueryPolicy())
+        assert await records._next_batch(8) == []
+
+        key = Key(self.ns, "rs_iter_one", 1)
+
+        async def write():
+            await client.put(key, {"n": 1}, policy=WritePolicy())
+
+        await write()
+        await wait_for_scan_visible(client, self.ns, "rs_iter_one", 1, write)
+        stmt = Statement(self.ns, "rs_iter_one", ["n"])
+        records = await client.query(stmt, PartitionFilter.all(), policy=QueryPolicy())
+        assert [record.bins["n"] for record in await records._next_batch(8)] == [1]
+        assert await records._next_batch(8) == []
+
+    async def test_next_batch_raises_a_query_error(self, client):
+        stmt = Statement("bad_ns", "test", ["bin1"])
+        records = await client.query(stmt, PartitionFilter.all(), policy=QueryPolicy())
+        with pytest.raises(InvalidNamespaceError):
+            await records._next_batch(8)
+
+    async def test_next_batch_rejects_zero(self, seeded):
+        records = await self._query(seeded)
+        with pytest.raises(ValueError):
+            records._next_batch(0)
+        records.close()
+
+    def test_next_batch_refuses_a_blocking_recordset(self, aerospike_host, use_services_alternate):
+        cp = ClientPolicy()
+        cp.use_services_alternate = use_services_alternate
+        client = new_client_blocking(cp, aerospike_host)
+        try:
+            stmt = Statement(self.ns, self.set_name, ["n"])
+            records = client.query_blocking(stmt, PartitionFilter.all(), policy=QueryPolicy())
+            with pytest.raises(RuntimeError):
+                records._next_batch(8)
+            records.close()
+        finally:
+            client.close_blocking()
+
 
 class TestQueryEmptySet(TestFixtureConnection):
     """Test query with empty set name."""

@@ -5342,6 +5342,7 @@ fn _native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(has_any_write_op, m)?)?;
     m.add_function(wrap_pyfunction!(geojson, m)?)?;
     m.add_function(wrap_pyfunction!(refresh_log_levels, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::stream_step::_ready_step, m)?)?;
     m.add_class::<AuthMode>()?;
     m.add_class::<ClientPolicy>()?;
     m.add_class::<WritePolicy>()?;

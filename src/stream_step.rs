@@ -35,6 +35,7 @@ use futures::Stream;
 use pyo3::exceptions::{PyRuntimeError, PyStopIteration};
 use pyo3::prelude::*;
 use pyo3::{PyTraverseError, PyVisit};
+use pyo3_stub_gen::derive::gen_stub_pyfunction;
 
 /// Most buffered items handed out back to back before one step yields to the
 /// loop.
@@ -50,37 +51,83 @@ const BUDGET_CHECK_INTERVAL: u32 = 8;
 
 /// A consumer's current run of steps that did not suspend it.
 pub(crate) struct BufferedStreak {
+    /// Items handed out in this run.
     steps: u32,
+    /// Item count at which the clock is read next.
+    next_check: u32,
     started: Option<Instant>,
 }
 
 impl BufferedStreak {
     pub(crate) const fn new() -> Self {
-        Self { steps: 0, started: None }
+        Self { steps: 0, next_check: BUDGET_CHECK_INTERVAL, started: None }
     }
 
     /// Whether the next step should yield to the loop before taking.
-    pub(crate) fn is_due(&self) -> bool {
+    pub(crate) fn is_due(&mut self) -> bool {
         if self.steps >= YIELD_INTERVAL {
             return true;
         }
-        self.steps != 0
-            && self.steps.is_multiple_of(BUDGET_CHECK_INTERVAL)
-            && self.started.is_some_and(|started| started.elapsed() >= YIELD_BUDGET)
+        if self.steps < self.next_check {
+            return false;
+        }
+        self.next_check = self.steps + BUDGET_CHECK_INTERVAL;
+        self.started.is_some_and(|started| started.elapsed() >= YIELD_BUDGET)
     }
 
-    /// Count a step that handed out a buffered item.
+    /// Count a step that handed out one buffered item.
     pub(crate) fn extend(&mut self) {
-        if self.steps == 0 {
+        self.extend_by(1);
+    }
+
+    /// Count a step that handed out `items` buffered items at once.
+    pub(crate) fn extend_by(&mut self, items: u32) {
+        if self.started.is_none() {
             self.started = Some(Instant::now());
         }
-        self.steps += 1;
+        self.steps = self.steps.saturating_add(items);
     }
 
     /// End the run: the consumer is about to let the loop take a turn.
     pub(crate) fn reset(&mut self) {
-        self.steps = 0;
-        self.started = None;
+        *self = Self::new();
+    }
+}
+
+/// A stream that can take back the item that ended a batch.
+///
+/// A batch stops at the first error or at the end of the stream, but it can
+/// only learn of either by taking it off the stream. The items gathered so
+/// far still have to be returned, so the terminal item is parked here and
+/// comes out again on the next poll, whichever way the stream is read next.
+pub(crate) struct Parking<S: Stream> {
+    inner: S,
+    parked: Option<Option<S::Item>>,
+}
+
+impl<S: Stream + Unpin> Parking<S> {
+    pub(crate) fn new(inner: S) -> Self {
+        Self { inner, parked: None }
+    }
+
+    /// Hand `item` back, to be the result of the next poll.
+    pub(crate) fn park(&mut self, item: Option<S::Item>) {
+        self.parked = Some(item);
+    }
+}
+
+impl<S: Stream + Unpin> Stream for Parking<S>
+where
+    S::Item: Unpin,
+{
+    type Item = S::Item;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<S::Item>> {
+        let this = self.get_mut();
+        if let Some(item) = this.parked.take() {
+            return Poll::Ready(item);
+        }
+        Pin::new(&mut this.inner).poll_next(cx)
     }
 }
 
@@ -125,6 +172,16 @@ pub(crate) fn yield_first_step(
     source: Box<dyn StepSource>,
 ) -> PyResult<Py<PyAny>> {
     Ok(Py::new(py, YieldFirstStep { source, phase: Phase::Start })?.into_any())
+}
+
+/// Internal: wrap ``value`` in an awaitable that resolves to it without
+/// suspending. Not part of the public API; the SDK's query streams use it to
+/// hand out a row they already hold without a coroutine per row.
+#[pyfunction]
+#[gen_stub_pyfunction(module = "_native")]
+#[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+pub(crate) fn _ready_step(py: Python<'_>, value: Py<PyAny>) -> PyResult<Py<PyAny>> {
+    ready_step(py, Ok(value))
 }
 
 fn finish(result: PyResult<Py<PyAny>>) -> PyResult<Py<PyAny>> {
@@ -228,5 +285,54 @@ impl YieldFirstStep {
         let yielded = steps.call_method0(pyo3::intern!(steps.py(), "__next__"))?;
         self.phase = Phase::Waiting(steps.unbind());
         Ok(yielded.unbind())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::stream;
+
+    fn poll<S: Stream + Unpin>(stream: &mut S) -> Poll<Option<S::Item>> {
+        poll_buffered(Pin::new(stream))
+    }
+
+    #[test]
+    fn parked_item_comes_out_before_the_rest() {
+        let mut parking = Parking::new(stream::iter([1, 2]));
+        assert_eq!(poll(&mut parking), Poll::Ready(Some(1)));
+        parking.park(Some(1));
+        assert_eq!(poll(&mut parking), Poll::Ready(Some(1)));
+        assert_eq!(poll(&mut parking), Poll::Ready(Some(2)));
+        assert_eq!(poll(&mut parking), Poll::Ready(None));
+    }
+
+    #[test]
+    fn parked_end_is_reported_once_more() {
+        let mut parking = Parking::new(stream::iter([1]));
+        parking.park(None);
+        assert_eq!(poll(&mut parking), Poll::Ready(None));
+        assert_eq!(poll(&mut parking), Poll::Ready(Some(1)));
+    }
+
+    #[test]
+    fn streak_is_due_at_the_item_limit_however_items_arrive() {
+        let mut streak = BufferedStreak::new();
+        assert!(!streak.is_due());
+        streak.extend_by(YIELD_INTERVAL - 1);
+        // Under the limit and inside the time budget.
+        assert!(!streak.is_due());
+        streak.extend();
+        assert!(streak.is_due());
+        streak.reset();
+        assert!(!streak.is_due());
+    }
+
+    #[test]
+    fn streak_is_due_once_the_time_budget_is_spent() {
+        let mut streak = BufferedStreak::new();
+        streak.extend_by(BUDGET_CHECK_INTERVAL);
+        std::thread::sleep(YIELD_BUDGET * 2);
+        assert!(streak.is_due());
     }
 }
