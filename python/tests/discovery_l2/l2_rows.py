@@ -37,13 +37,6 @@ SET = "l2"
 MISS_RETRIES = 3
 MISS_KEY_COUNT = 200
 
-# The rows whose translator is written in the test itself.
-NO_USER_TRANSLATOR = (
-    "needs a user-supplied address translator, which is out of scope for this "
-    "release; the client translates with its built-in port-map, static-map and "
-    "pass-through translators"
-)
-
 
 def skip_unless(condition: bool, reason: str) -> None:
     """Skips the row, naming what it needs, when ``condition`` does not hold."""
@@ -155,19 +148,6 @@ def port_map(mapping: dict[str, str]) -> PortMapAddressTranslator:
     return PortMapAddressTranslator(mapping)
 
 
-async def assert_port_map_joins(row: str, mapping: dict[str, str]) -> None:
-    policy = topo.policy()
-    print(f"L2-PORT-MAP {row} {mapping}")
-    policy.address_translator = port_map(mapping)
-    client = await connect(policy, [await topo.seed()])
-    names = await topo.node_names()
-    await topo.wait_nodes(client, names)
-    print(f"L2-JOIN {row} nodes={topo.client_node_names(client)}")
-    owners = topo.owners(await topo.assert_all_partitions_owned(row, client))
-    assert list(owners) == names
-    await client.close()
-
-
 async def assert_seed_keys_work(row: str, client: Client, seed: topo.L2Node) -> None:
     """The seed serves the keys it masters, and the keys nobody masters have
     no node in the client's map."""
@@ -188,46 +168,3 @@ async def assert_seed_keys_work(row: str, client: Client, seed: topo.L2Node) -> 
     assert not_owned > 0
 
 
-SERVED_STATS = [
-    "client_write_success",
-    "client_read_success",
-    "client_proxy_complete",
-    "client_proxy_error",
-    "client_proxy_timeout",
-]
-
-
-async def assert_served_by_owners(
-    row: str, client: Client, master_list: list, node_list: list[topo.L2Node], set_name: str, key_count: int
-) -> None:
-    """Writes and reads keys spread across partitions with replica MASTER and
-    asserts, from each node's namespace statistics, that each node served
-    exactly the keys it masters with no server proxy hop."""
-    before = {n.name: await topo.namespace_stats(n, SERVED_STATS) for n in node_list}
-    wp = write_policy(replica=Replica.MASTER)
-    rp = read_policy(replica=Replica.MASTER)
-    served: dict[str, int] = {}
-    for i in range(key_count):
-        k = key(set_name, f"{row}-{i}")
-        owner = master_list[k.partition_id]
-        assert owner is not None, f"{k} has no master"
-        await put_get(client, wp, rp, k, i)
-        served[owner.name] = served.get(owner.name, 0) + 1
-    for node in node_list:
-        after = await topo.namespace_stats(node, SERVED_STATS)
-
-        def delta(name: str) -> int:
-            return after[name] - before[node.name][name]
-
-        writes_served = delta("client_write_success")
-        reads_served = delta("client_read_success")
-        proxied = delta("client_proxy_complete") + delta("client_proxy_error") + delta("client_proxy_timeout")
-        expected = served.get(node.name, 0)
-        print(
-            f"L2-{row}-SERVED node={node.name} keys={expected} writes={writes_served} "
-            f"reads={reads_served} proxied={proxied}"
-        )
-        assert expected > 0, f"{node.name} served no keys"
-        assert writes_served == expected, f"{node.name} writes"
-        assert reads_served == expected, f"{node.name} reads"
-        assert proxied == 0, f"{node.name} proxied"

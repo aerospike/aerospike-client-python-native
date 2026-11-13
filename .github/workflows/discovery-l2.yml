@@ -28,9 +28,7 @@ on:
         default: ""
       profile:
         description: >-
-          A discovery-l2-topology profile: default, reachable, pass-through-names,
-          pass-through-ports, port-map-range, cn-only, low-mtu, port-range or
-          idle-reset
+          A discovery-l2-topology profile: default, pass-through-ports or cn-only
         type: string
         required: false
         default: default

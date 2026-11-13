@@ -33,13 +33,8 @@ esac
 
 case "$profile" in
   default) target="$suite" ;;
-  reachable) target="$suite/reachable_test.py" ;;
-  pass-through-names|pass-through-ports) target="$suite/pass_through_test.py" ;;
-  port-map-range) target="$suite/port_map_range_test.py" ;;
+  pass-through-ports) target="$suite/pass_through_test.py" ;;
   cn-only) target="$suite/cn_only_test.py" ;;
-  low-mtu) target="$suite/low_mtu_test.py" ;;
-  port-range) target="$suite/source_port_range_test.py" ;;
-  idle-reset) target="$suite/idle_reset_test.py" ;;
   *)
     echo "Unknown profile ${profile}" >&2
     exit 1

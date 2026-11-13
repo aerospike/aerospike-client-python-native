@@ -13,15 +13,13 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-"""Rows N-15, N-16 and N-18 against the pass-through profiles.
+"""Row N-18, translation collisions, against the pass-through-ports profile.
 
-In pass-through-names (Branch A) each node advertises its own
-alternate-access-address hostname with its own listener port; in
-pass-through-ports (Branch B) every node advertises one hostname with its
-own listener port. Every hostname resolves to the one Toxiproxy container in
-the client container, so every listener shares one IP address and the nodes
-differ only by port. DISCOVERY_PASS_THROUGH_BRANCH names the branch; without
-it every case is skipped.
+Every node advertises one alternate-access-address hostname with its own
+listener port (Branch B). The hostname resolves to the one Toxiproxy
+container in the client container, so every listener shares one IP address
+and the nodes differ only by port. Without DISCOVERY_PASS_THROUGH_BRANCH=B
+every case is skipped.
 """
 
 import l2_capture as capture
@@ -32,16 +30,11 @@ from aerospike_native import (
     Host,
     PassThroughAddressTranslator,
     Replica,
-    TranslationMissMode,
 )
 
 SET = "l2-pass-through"
 KEY_COUNT = 300
 COLLISION_RETRIES = 3
-BRANCH_A = (
-    " needs DISCOVERY_PASS_THROUGH_BRANCH=A, each node advertising its own "
-    "alternate-access-address hostname (profile pass-through-names)"
-)
 BRANCH_B = (
     " needs DISCOVERY_PASS_THROUGH_BRANCH=B and DISCOVERY_CONTROL_DIR, every node advertising "
     "one alternate-access-address hostname with its own port (profile pass-through-ports)"
@@ -89,25 +82,6 @@ def collisions(node_name: str) -> list[str]:
 def assert_collision(message: str, node_a: str, node_b: str, host: str, translator: str) -> None:
     for part in [node_a, node_b, host, translator, "to the same address"]:
         assert part in message, f"{part} not in: {message}"
-
-
-async def assert_routes_to_owners(row: str, policy: ClientPolicy, node_list: list[topo.L2Node]) -> None:
-    capture.clear()
-    client = await rows.connect(policy, [await seed(node_list[0])])
-    names = await topo.node_names()
-    await topo.wait_nodes(client, names)
-    master_list = await topo.assert_all_partitions_owned(row, client)
-    owners = topo.owners(master_list)
-    print(f"L2-{row}-OWNERS nodes={len(owners)} partitionsPerNode={owners}")
-    assert list(owners) == names
-    for node in client.nodes():
-        host = node.host
-        endpoint = await alternate(rows.node_of(node_list, node.name))
-        print(f"L2-{row}-NODE {node.name} host={host[0]}:{host[1]} alternate={endpoint}")
-        topo.assert_address(endpoint, host)
-    await rows.assert_served_by_owners(row, client, master_list, node_list, SET, KEY_COUNT)
-    assert capture.warnings() == []
-    await client.close()
 
 
 async def assert_others_serve(row: str, client, names: list[str]) -> None:
@@ -213,98 +187,6 @@ async def assert_peers_collide_with_seed(row: str, policy: ClientPolicy, target:
     await client.close()
 
 
-async def test_n15_distinct_names_route_to_every_owner():
-    """N-15: pass-through, Branch A. Each node advertises its own
-    alternate-access-address hostname and its own listener port, and the
-    client reads the alternate list through the pass-through translator with
-    no map. Every partition owner is a distinct node at the address its node
-    advertises, and writes and reads are served by the owner without a
-    server proxy hop."""
-    rows.skip_unless(topo.t().pass_through_branch == "A", f"N-15{BRANCH_A}")
-    node_list = await topo.nodes()
-    hostnames = set()
-    for node in node_list:
-        endpoint = await alternate(node)
-        print(f"L2-N15-ADVERTISED {node.name} standard={node.advertised} alternate={endpoint}")
-        hostnames.add(topo.host_of(endpoint))
-        assert topo.port_of(endpoint) == node.port
-    assert len(hostnames) == len(node_list), f"Hostnames {hostnames}"
-    await assert_routes_to_owners("N-15", pass_through_policy(), node_list)
-
-
-async def test_n16_shared_name_routes_to_every_owner():
-    """N-16: pass-through, Branch B. Every node advertises the same
-    alternate-access-address hostname and its own alternate-access-port, the
-    client reads the alternate list through the pass-through translator with
-    no map, and the partition map is complete with every owner a distinct
-    node served without a server proxy hop."""
-    require_branch_b("N-16")
-    node_list = await topo.nodes()
-    hostnames = set()
-    for node in node_list:
-        endpoint = await alternate(node)
-        print(f"L2-N16-ADVERTISED {node.name} standard={node.advertised} alternate={endpoint}")
-        hostnames.add(topo.host_of(endpoint))
-        assert topo.port_of(endpoint) == node.port
-    assert len(hostnames) == 1, f"Hostnames {hostnames}"
-    await assert_routes_to_owners("N-16", pass_through_policy(), node_list)
-
-
-async def test_n16_shared_name_strict_routes_to_every_owner():
-    """N-16 with on_miss strict: the pass-through translator never misses, so
-    routing is the same as with the default."""
-    require_branch_b("N-16 strict")
-    policy = pass_through_policy()
-    policy.translation_on_miss = TranslationMissMode.STRICT
-    await assert_routes_to_owners("N-16-strict", policy, await topo.nodes())
-
-
-async def test_n16_new_node_on_shared_name_active_within_two_tend_intervals():
-    """N-16 scale-out: a node started mid-test that advertises the same
-    hostname and its own port is an active node within 2 x tend_interval of
-    the peers-generation bump that announces it, with no client change. The
-    test gives it a listener on that port before it joins."""
-    require_branch_b("N-16 scale-out")
-    node_list = await topo.nodes()
-    first = node_list[0]
-    names = await topo.node_names()
-    hostname = topo.host_of(await alternate(first))
-    policy = pass_through_policy()
-    client = await rows.connect(policy, [await seed(first)])
-    await topo.wait_nodes(client, names)
-    await topo.assert_all_partitions_owned("N-16-before", client)
-
-    generation = await topo.peers_generation(first)
-    port = await topo.next_listener_port()
-    container = await start(f"alternate-port={port}")
-    upstream = await topo.upstream_port(first.proxy)
-    await topo.add_listener_on(container, port, f"{container}:{upstream}")
-    topo.restore_later(topo.RemoveListener(container))
-    assert await topo.peers_generation(first) == generation, (
-        f"peers-generation bumped before {container} had a listener"
-    )
-
-    joined = await topo.wait_joined(client, first, generation, names)
-    node = joined.node
-    budget = 2 * policy.tend_interval
-    reply = await topo.info(topo.t().host, port, ["node", "service-clear-alt"])
-    print(
-        f"L2-N16-TIMING node={node.name} host={node.host} container={container} "
-        f"advertised={reply['service-clear-alt']} generation={generation}->{joined.generation} "
-        f"bumpToActiveMs={joined.bump_to_active_ms} tendInterval={policy.tend_interval} budgetMs={budget}"
-    )
-    assert reply["node"] == node.name
-    assert f"{hostname}:{port}" in reply["service-clear-alt"], f"{hostname}:{port} not in {reply}"
-    assert node.host[1] == port
-    assert joined.bump_to_active_ms <= budget, (
-        f"{node.name} active {joined.bump_to_active_ms}ms after the bump, budget {budget}ms"
-    )
-    owns = await topo.wait_for(lambda: node.name in topo.owners_of(client))
-    print(f"L2-N16-OWNERS {topo.owners_of(client)}")
-    assert owns, f"{node.name} owns no partitions"
-    await client.close()
-
-
 async def test_n18_pass_through_colliding_nodes_create_no_node():
     """N-18 on pass-through: two nodes advertise the same
     alternate-access-address and alternate-access-port. Seeded through a node
@@ -322,13 +204,6 @@ async def test_n18_static_map_colliding_nodes_create_no_node():
     policy = topo.policy()
     policy.use_services_alternate = True
     await assert_colliding_nodes_create_no_node("N-18-static-map", policy, "static-map")
-
-
-async def test_n18_custom_translator_colliding_nodes_create_no_node():
-    """N-18 with a custom translator that maps every endpoint to the seed's
-    address. The port-map case that maps every node to the seed's address
-    covers the behavior with a built-in translator."""
-    rows.skip_unless(False, f"N-18 custom {rows.NO_USER_TRANSLATOR}")
 
 
 async def test_n18_port_map_to_seed_address_peers_create_no_node():

@@ -23,10 +23,6 @@ from typing import Awaitable, Callable, Optional
 
 from aerospike_native import ResultCode, exceptions
 
-# Errors kept in full. A row under fault injection can fail tens of
-# thousands of commands per second; the rest keep their kind only.
-KEPT_ERRORS = 1000
-
 # Outcomes kept at all. Past this the counts go on and the list stops: a
 # command that fails at once, with no node to send it to, completes at the
 # rate the CPU allows.
@@ -53,21 +49,6 @@ def attempts(error: BaseException) -> list[BaseException]:
     ]
 
 
-def is_timeout(error: BaseException) -> bool:
-    """Whether the error is a client timeout. A client deadline carries the
-    shared TIMEOUT result code, which raises a server error type when no
-    retry wraps it."""
-    return isinstance(error, exceptions.TimeoutError) or getattr(error, "result_code", None) == ResultCode.TIMEOUT
-
-
-def waited_out_a_timeout(error: BaseException) -> bool:
-    """Whether an attempt waited out a socket or total timeout, as opposed to
-    the retries-exhausted timeout that also reports connection errors."""
-    return any(
-        is_timeout(e) and e.result_code != ResultCode.MAX_RETRIES_EXCEEDED for e in attempts(error)
-    )
-
-
 def refused_by_breaker(error: BaseException) -> bool:
     """Whether an attempt was refused by the node's error-rate circuit breaker."""
     return any(
@@ -79,29 +60,23 @@ def refused_by_breaker(error: BaseException) -> bool:
 @dataclass(frozen=True)
 class Outcome:
     """One command run by a :class:`Load`: when it started (monotonic
-    seconds), how long it took, its error kind (``ok`` on success) and, for
-    the first ``KEPT_ERRORS`` failures, the error itself."""
+    seconds), how long it took, its error kind (``ok`` on success) and
+    whether the circuit breaker refused it."""
 
     start: float
     elapsed_ms: int
     kind: str
-    timeout: bool
-    socket_timeout: bool
     max_error_rate: bool
-    error: Optional[BaseException]
 
     @classmethod
-    def of(cls, start: float, elapsed_ms: int, error: Optional[BaseException], keep: bool) -> "Outcome":
+    def of(cls, start: float, elapsed_ms: int, error: Optional[BaseException]) -> "Outcome":
         if error is None:
-            return cls(start, elapsed_ms, "ok", False, False, False, None)
+            return cls(start, elapsed_ms, "ok", False)
         return cls(
             start,
             elapsed_ms,
             f"{type(error).__name__}({getattr(error, 'result_code', None)})",
-            is_timeout(error),
-            waited_out_a_timeout(error),
             refused_by_breaker(error),
-            error if keep else None,
         )
 
     @property
@@ -132,12 +107,10 @@ class Load:
             except Exception as e:
                 error = e
             elapsed_ms = int((time.monotonic() - start) * 1000)
-            keep = False
             if error is not None:
-                keep = self.error_count < KEPT_ERRORS
                 self.error_count += 1
             if self.total < KEPT_OUTCOMES:
-                self.outcomes.append(Outcome.of(start, elapsed_ms, error, keep))
+                self.outcomes.append(Outcome.of(start, elapsed_ms, error))
             self.total += 1
             iteration += 1
             # A command refused without ever pending would otherwise keep this

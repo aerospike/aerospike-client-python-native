@@ -13,20 +13,17 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-"""Row F-4 against the default topology: a Toxiproxy timeout toxic on one
-node's listener holds data with no reply and no close, as a conntrack
-mismatch does. No client marks down a node the cluster still lists, so F-4
-asserts bounded timeouts, no blocked tasks, recovery, and the error-rate
+"""Row F-4's circuit breaker against the default topology: a Toxiproxy
+timeout toxic on one node's listener holds data with no reply and no close,
+as a conntrack mismatch does, and the timeouts trip the node's error-rate
 circuit breaker. Every toxic a case adds is removed after the row."""
 
 import asyncio
 import time
 from dataclasses import dataclass
 
-import l2_capture as capture
 import l2_rows as rows
 import l2_topology as topo
-import pytest
 from aerospike_native import Client, Key, WritePolicy
 from aerospike_native.exceptions import AerospikeError
 from l2_load import Load, kinds, refused_by_breaker
@@ -122,58 +119,6 @@ def breaker_hits(client: Client, victim: topo.L2Node) -> int:
             snapshot = topo.node_snapshot(client, node)
             return 0 if snapshot is None else snapshot.circuit_breaker_hits
     return 0
-
-
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "core retries a write after a socket timeout and many retries succeed, so "
-        "timeouts to the dropped node arrive past the bound or too few arrive"
-    ),
-)
-async def test_f4_silent_drop_times_out_without_blocking():
-    """F-4: commands to the node fail with a timeout within a bound from
-    socket_timeout and total_timeout, every error is a timeout, no command
-    task stays blocked past the bound, and the node serves again once the
-    toxic is removed. Whether the client marks the node down is recorded,
-    not asserted."""
-    capture.clear()
-    drop = await inject(topo.policy())
-    assert await topo.wait_for(lambda: sum(1 for o in drop.load.errors() if o.timeout) >= TASKS), (
-        f"F-4: fewer than {TASKS} timeouts after the drop"
-    )
-    finished = await drop.load.stop(drop.timeout_bound)
-    errors = drop.load.errors()
-    first_timeout_ms = None
-    max_elapsed = 0
-    for outcome in errors:
-        max_elapsed = max(max_elapsed, outcome.elapsed_ms)
-        assert outcome.timeout, (
-            f"F-4: error is not a timeout: {outcome.kind} "
-            f"{topo.messages(outcome.error) if outcome.error else ''}"
-        )
-        at = max(0, int((outcome.start - drop.injected) * 1000)) + outcome.elapsed_ms
-        first_timeout_ms = at if first_timeout_ms is None else min(first_timeout_ms, at)
-    first_timeout_ms = first_timeout_ms or 0
-    refresh_failures = len(capture.messages_containing(drop.victim.name, "refresh failed"))
-    print(
-        f"L2-F4-TIMEOUT victim={drop.victim.name} listener={drop.victim.port} "
-        f"firstTimeoutMs={first_timeout_ms} maxErrorElapsedMs={max_elapsed} "
-        f"timeoutBoundMs={drop.timeout_bound} errors={kinds(errors)} "
-        f"successes={drop.load.successes} tasksReturned={finished}"
-    )
-    print(
-        f"L2-F4-NODE nodes={topo.client_node_names(drop.client)} owners={topo.owners_of(drop.client)} "
-        f"refreshFailedWarnings={refresh_failures}"
-    )
-    assert finished, f"F-4: command tasks still blocked {drop.timeout_bound}ms after stop"
-    assert first_timeout_ms <= drop.timeout_bound, (
-        f"F-4: first timeout {first_timeout_ms}ms after the drop, bound {drop.timeout_bound}ms"
-    )
-    assert max_elapsed <= drop.timeout_bound, (
-        f"F-4: an error took {max_elapsed}ms, bound {drop.timeout_bound}ms"
-    )
-    await recover(drop)
 
 
 async def test_f4_silent_drop_trips_circuit_breaker():

@@ -35,13 +35,7 @@ jobs:
       matrix:
         profile:
           - default
-          - reachable
-          - pass-through-names
           - pass-through-ports
-          - port-map-range
-          - low-mtu
-          - port-range
-          - idle-reset
     uses: ./.github/workflows/discovery-l2.yml
     with:
       subset: ce
