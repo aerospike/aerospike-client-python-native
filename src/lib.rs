@@ -93,7 +93,7 @@ use crate::stream_step::{
 };
 use crate::cdt::ctx_to_vec;
 use crate::operations::{
-    bins_flag, bins_from_dict, bins_from_dict_list, convert_ops_with_ctx_to_core,
+    bins_flag, bins_from_dict, bins_from_dict_list, convert_ops_with_ctx_to_core, BatchOpLists,
     extract_py_ops_with_ctx,
 };
 
@@ -2481,7 +2481,8 @@ use crate::operations::{
         pub fn batch_operate_blocking(
             &self,
             keys: Vec<PyRef<Key>>,
-            operations_list: Vec<Vec<Py<PyAny>>>,
+            #[gen_stub(override_type(type_repr="typing.Sequence[typing.Sequence[typing.Any]]", imports=("typing")))]
+            operations_list: Vec<Bound<'_, PyAny>>,
             batch_policy: Option<&BatchPolicy>,
             write_policy: Option<&BatchWritePolicy>,
             py: Python<'_>,
@@ -2496,16 +2497,12 @@ use crate::operations::{
             let client = self._as.clone();
             let rust_keys: Vec<aerospike_core::Key> =
                 keys.iter().map(|k| k._as.clone()).collect();
-            let mut rust_ops_list = Vec::with_capacity(operations_list.len());
-            for operations in operations_list {
-                rust_ops_list.push(extract_py_ops_with_ctx(py, &operations)?);
-            }
+            let op_lists = BatchOpLists::extract(&operations_list)?;
             let raw = run_blocking(py, async move {
                 use aerospike_core::BatchOperation;
                 let read_policy = aerospike_core::BatchReadPolicy::default();
                 let mut batch_ops = Vec::with_capacity(rust_keys.len());
-                for (key, ops) in rust_keys.into_iter().zip(rust_ops_list) {
-                    let (core_ops, has_write_op) = convert_ops_with_ctx_to_core(&ops, true)?;
+                for (key, (core_ops, has_write_op)) in rust_keys.into_iter().zip(op_lists.into_core()?) {
                     let batch_op = if has_write_op {
                         BatchOperation::write(&write_policy, key, core_ops)
                     } else {
@@ -3505,7 +3502,8 @@ use crate::operations::{
         pub fn batch_operate<'a>(
             &self,
             keys: Vec<PyRef<Key>>,
-            operations_list: Vec<Vec<Py<PyAny>>>,
+            #[gen_stub(override_type(type_repr="typing.Sequence[typing.Sequence[typing.Any]]", imports=("typing")))]
+            operations_list: Vec<Bound<'a, PyAny>>,
             batch_policy: Option<&BatchPolicy>,
             write_policy: Option<&BatchWritePolicy>,
             py: Python<'a>,
@@ -3521,10 +3519,7 @@ use crate::operations::{
             let rust_keys: Vec<aerospike_core::Key> =
                 keys.iter().map(|k| k._as.clone()).collect();
 
-            let mut rust_ops_list = Vec::with_capacity(operations_list.len());
-            for operations in operations_list {
-                rust_ops_list.push(extract_py_ops_with_ctx(py, &operations)?);
-            }
+            let op_lists = BatchOpLists::extract(&operations_list)?;
 
             completion::batched_future_into_py(self.require_bridge()?, py, async move {
                 use aerospike_core::BatchOperation;
@@ -3532,8 +3527,7 @@ use crate::operations::{
                 let read_policy = aerospike_core::BatchReadPolicy::default();
 
                 let mut batch_ops = Vec::with_capacity(rust_keys.len());
-                for (key, ops) in rust_keys.into_iter().zip(rust_ops_list) {
-                    let (core_ops, has_write_op) = convert_ops_with_ctx_to_core(&ops, true)?;
+                for (key, (core_ops, has_write_op)) in rust_keys.into_iter().zip(op_lists.into_core()?) {
                     let batch_op = if has_write_op {
                         BatchOperation::write(&write_policy, key, core_ops)
                     } else {
