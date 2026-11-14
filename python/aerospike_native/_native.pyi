@@ -4411,6 +4411,31 @@ class Key:
         """
     def __new__(cls, namespace: builtins.str, set: builtins.str, key: typing.Any) -> _native.Key: ...
     @staticmethod
+    def from_user_keys(namespace: builtins.str, set: builtins.str, user_keys: typing.Iterable[typing.Any]) -> builtins.list[_native.Key]:
+        r"""
+        Create one key per user key, all in the same namespace and set.
+
+        Equivalent to ``[Key(namespace, set, k) for k in user_keys]``, in
+        one call instead of one per key. Use it to build the keys of a
+        batch.
+
+        Args:
+            namespace: The namespace every key belongs to.
+            set: The set every key belongs to.
+            user_keys: The user keys, each an ``int``, ``str`` or ``bytes``.
+
+        Returns:
+            The keys, in the order of ``user_keys``.
+
+        Raises:
+            ValueError: A user key is of a type that cannot be a key.
+
+        Example::
+
+            keys = Key.from_user_keys("test", "users", [1001, 1002, 1003])
+            records = await client.batch_read(keys)
+        """
+    @staticmethod
     def from_int_user_key(namespace: builtins.str, set: builtins.str, key: builtins.int) -> _native.Key:
         r"""
         Fast-path Key constructor for the bench/per-op hot loop where
