@@ -304,12 +304,20 @@ class TestVectorUnsupportedCluster(TestFixtureCleanDB):
     async def test_vector_expression_is_refused(self, client, key):
         await client.put(key, {"n": 1})
         query = distance(VectorDistanceMetric.DOT_PRODUCT, Vector([1.0]))
-        with pytest.raises(AerospikeValueError, match="not supported"):
+        with pytest.raises(
+            AerospikeValueError,
+            match="Vector is not supported by all nodes in the cluster",
+        ) as exc_info:
             await client.operate(key, [ExpOperation.read("d", query, ExpReadFlags.DEFAULT)])
+        assert exc_info.value.result_code == ResultCode.PARAMETER_ERROR
 
     async def test_top_k_query_is_refused(self, client):
         stmt = Statement(NAMESPACE, SET, ["n"])
         stmt.set_order_by("n", BinDataType.INTEGER, Order.DESC)
         stmt.top_k = 5
-        with pytest.raises(AerospikeValueError, match="Top-K is not supported"):
+        with pytest.raises(
+            AerospikeValueError,
+            match="order_by/top_k is not supported by all nodes in the cluster",
+        ) as exc_info:
             await collect(client, stmt)
+        assert exc_info.value.result_code == ResultCode.PARAMETER_ERROR
