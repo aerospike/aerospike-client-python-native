@@ -67,6 +67,7 @@ mod stream_step;
 mod string_ops;
 mod server_error;
 mod metrics;
+mod immortal;
 
 pub use enums::*;
 pub use errors::*;
@@ -5436,6 +5437,8 @@ fn _native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     exceptions_module.add("MaxErrorRate", py.get_type::<MaxErrorRate>())?;
     exceptions_module.add("ResultCode", py.get_type::<ResultCode>())?;
     m.add_submodule(&exceptions_module)?;
+
+    immortal::make_classes_immortal(m)?;
 
     Ok(())
 }
