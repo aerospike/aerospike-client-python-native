@@ -1650,9 +1650,6 @@ pub enum Concurrency {
                 aerospike_core::OrderByType::Integer => BinDataType::Integer,
                 aerospike_core::OrderByType::Double => BinDataType::Double,
                 aerospike_core::OrderByType::Bytes => BinDataType::Bytes,
-                aerospike_core::OrderByType::String => {
-                    unreachable!("order keys are only set through BinDataType, which has no STRING")
-                }
             }
         }
     }

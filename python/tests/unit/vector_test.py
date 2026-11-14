@@ -116,7 +116,10 @@ class TestVectorConstruction:
             Vector([1.0, value], VectorElementType.FLOAT16)
 
     def test_oversized_vector_is_rejected(self):
-        with pytest.raises(ValueError, match="exceeds max"):
+        with pytest.raises(
+            ValueError,
+            match="Vector dimensions 32769 exceed the maximum of 32768 for element type float64",
+        ):
             Vector([0.0] * 32769, VectorElementType.FLOAT64)
 
     def test_int32_overflow_and_non_numbers_are_rejected(self):
@@ -275,11 +278,14 @@ class TestVectorWireBytes:
     @pytest.mark.parametrize(
         "data, reason",
         [
-            (wire_bytes(0x03, "f", [1.0]) + b"\x00", "invalid vector length: 11"),
-            (wire_bytes(0x03, "f", [1.0])[:-1], "invalid vector length: 9"),
-            (wire_bytes(0x03, "f", [1.0], version=2), "unsupported vector format version 2"),
-            (wire_bytes(0x03, "f", []), "at least 1 dimension"),
-            (wire_bytes(0x09, "f", [1.0]), "unknown vector element type code: 9"),
+            (wire_bytes(0x03, "f", [1.0]) + b"\x00", "Invalid vector length: 11, expected 10"),
+            (wire_bytes(0x03, "f", [1.0])[:-1], "Invalid vector length: 9, expected 10"),
+            (
+                wire_bytes(0x03, "f", [1.0], version=2),
+                r"Unsupported vector format version 2 \(expected 1\)",
+            ),
+            (wire_bytes(0x03, "f", []), "Vector must have at least 1 dimension: 0"),
+            (wire_bytes(0x09, "f", [1.0]), "Unknown vector element type code: 9"),
         ],
         ids=["trailing", "truncated", "unknown-version", "zero-dimensions", "unknown-type"],
     )
