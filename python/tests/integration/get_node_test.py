@@ -182,6 +182,13 @@ class TestVersion(TestFixtureConnection):
         if (version.major, version.minor, version.patch) >= (8, 2, 0):
             assert result is True
 
+    async def test_version_supports_vector_and_top_k(self, client):
+        """Test Version.supports_vector() and supports_query_top_k() (server 8.2.1+)."""
+        version = client.nodes()[0].version
+        expected = (version.major, version.minor, version.patch) >= (8, 2, 1)
+        assert version.supports_vector() is expected
+        assert version.supports_query_top_k() is expected
+
     async def test_version_supports_server_compiled_ael(self, client):
         """Test Version.supports_server_compiled_ael() method."""
         nodes = client.nodes()
