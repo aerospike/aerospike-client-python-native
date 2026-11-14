@@ -25,8 +25,8 @@ use pyo3::exceptions::{PyBufferError, PyIndexError, PyValueError};
 use pyo3::exceptions::PyTypeError;
 use pyo3::ffi;
 use pyo3::types::{
-    PyBool, PyByteArray, PyBytes, PyDict, PyIterator, PyList, PyMemoryView, PySlice, PySliceMethods, PySuper,
-    PyTuple,
+    PyBool, PyByteArray, PyBytes, PyDict, PyInt, PyIterator, PyList, PyMemoryView, PySlice, PySliceMethods,
+    PyString, PySuper, PyTuple,
 };
 use pyo3::PyTypeInfo;
 use pyo3::{prelude::*, Borrowed, IntoPyObjectExt};
@@ -185,6 +185,22 @@ use aerospike_core::VectorData;
      *
      **********************************************************************************/
 
+    /// A user key as a core value. An int, str or bytes, which is nearly
+    /// every key, is read directly; the general conversion tries several
+    /// other types first and pays for each miss.
+    fn user_key_value(key: &Bound<'_, PyAny>) -> PyResult<aerospike_core::Value> {
+        if key.is_exact_instance_of::<PyInt>() {
+            if let Ok(i) = key.extract::<i64>() {
+                return Ok(aerospike_core::Value::Int(i));
+            }
+        } else if let Ok(s) = key.cast_exact::<PyString>() {
+            return Ok(aerospike_core::Value::String(s.to_str()?.to_owned()));
+        } else if let Ok(b) = key.cast_exact::<PyBytes>() {
+            return Ok(aerospike_core::Value::Blob(b.as_bytes().to_vec()));
+        }
+        Ok(key.extract::<PythonValue>()?.into())
+    }
+
     #[gen_stub_pyclass(module = "_native")]
     #[pyclass(from_py_object, subclass, module = "_native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
@@ -197,10 +213,47 @@ use aerospike_core::VectorData;
     #[pymethods]
     impl Key {
         #[new]
-        fn new(namespace: &str, set: &str, key: PythonValue) -> Self {
+        fn new(namespace: &str, set: &str, key: &Bound<'_, PyAny>) -> PyResult<Self> {
             // Pass key value directly to core client - supports strings, bytes, integers, and None
-            let _as = aerospike_core::Key::new(namespace, set, key.into()).unwrap();
-            Key { _as }
+            let _as = aerospike_core::Key::new(namespace, set, user_key_value(key)?).unwrap();
+            Ok(Key { _as })
+        }
+
+        /// Create one key per user key, all in the same namespace and set.
+        ///
+        /// Equivalent to ``[Key(namespace, set, k) for k in user_keys]``, in
+        /// one call instead of one per key. Use it to build the keys of a
+        /// batch.
+        ///
+        /// Args:
+        ///     namespace: The namespace every key belongs to.
+        ///     set: The set every key belongs to.
+        ///     user_keys: The user keys, each an ``int``, ``str`` or ``bytes``.
+        ///
+        /// Returns:
+        ///     The keys, in the order of ``user_keys``.
+        ///
+        /// Raises:
+        ///     ValueError: A user key is of a type that cannot be a key.
+        ///
+        /// Example::
+        ///
+        ///     keys = Key.from_user_keys("test", "users", [1001, 1002, 1003])
+        ///     records = await client.batch_read(keys)
+        #[staticmethod]
+        pub fn from_user_keys(
+            namespace: &str,
+            set: &str,
+            #[gen_stub(override_type(type_repr="typing.Iterable[typing.Any]", imports=("typing")))]
+            user_keys: &Bound<'_, PyAny>,
+        ) -> PyResult<Vec<Key>> {
+            let mut keys = Vec::with_capacity(user_keys.len().unwrap_or(0));
+            for user_key in user_keys.try_iter()? {
+                let _as = aerospike_core::Key::new(namespace, set, user_key_value(&user_key?)?)
+                    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+                keys.push(Key { _as });
+            }
+            Ok(keys)
         }
 
         /// Fast-path Key constructor for the bench/per-op hot loop where
