@@ -504,6 +504,12 @@ jobs:
 
   macos-x86:
     runs-on: macos-latest-large
+    # Sets the wheel's platform tag and the minimum macOS of everything linked
+    # into it. Unset, the Rust code targets the toolchain's default while the
+    # C dependencies (ring, mimalloc) target the runner's own macOS. Keep in
+    # step with build-release.yaml.
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "10.15"
     strategy:
       matrix:
         python: [
@@ -572,6 +578,9 @@ jobs:
   # Integration tests run on self-hosted macOS ARM64 in macos-arm-integration.
   macos-arm:
     runs-on: macos-latest
+    # See macos-x86.
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
     strategy:
       matrix:
         python: [
@@ -762,6 +771,9 @@ jobs:
 
   macos-arm-freethreaded:
     runs-on: macos-latest
+    # See macos-x86.
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
     strategy:
       matrix:
         python: ['3.14t', '3.15t']

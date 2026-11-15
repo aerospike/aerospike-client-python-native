@@ -5,9 +5,9 @@ The Python Native Client (PNC) is the ultra-high performance [PyO3](https://pyo3
 blocking surfaces are made available in one client, with first-class free-threaded
 Python support providing TPS and latency profiles previously unachievable in Python.
 
-The PNC ships pre-built wheels for Linux (x86_64, aarch64), macOS (x86_64, arm64), and Windows
-(x86_64) on Python 3.11–3.15, plus free-threaded 3.14 and 3.15 (`cp314t`,
-`cp315t`) on Linux and macOS arm64.
+The PNC ships pre-built wheels for Linux (x86_64, aarch64; glibc 2.28+), macOS (x86_64 on
+macOS 10.15+, arm64 on macOS 11+), and Windows (x86_64) on Python 3.11–3.15, plus free-threaded
+3.14 and 3.15 (`cp314t`, `cp315t`) on Linux and macOS arm64.
 
 > ### Important:
 >
