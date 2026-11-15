@@ -147,6 +147,19 @@ jobs:
         rustup toolchain install 1.90.0 --profile minimal
         rustup default 1.90.0
 
+        if [[ "$RUNNER_OS" == "macOS" ]]; then
+          # Sets the wheel's platform tag and the minimum macOS of everything
+          # linked into it. Unset, the Rust code targets the toolchain's
+          # default while the C dependencies (ring, mimalloc) target the
+          # runner's own macOS. Keep in step with build-test.yml and the
+          # wheel-tag check in collect-artifacts.
+          case "$(uname -m)" in
+            x86_64) export MACOSX_DEPLOYMENT_TARGET=10.15 ;;
+            arm64) export MACOSX_DEPLOYMENT_TARGET=11.0 ;;
+            *) echo "::error::no macOS deployment target for $(uname -m)"; exit 1 ;;
+          esac
+        fi
+
         if [[ "$RUNNER_OS" == "Windows" ]]; then
           # Retry: the Chocolatey community feed rate-limits concurrent matrix
           # jobs, intermittently failing with "package not found".
@@ -218,11 +231,14 @@ jobs:
           # The Linux glibc floor is chosen by the manylinux_2_28 container, not
           # imposed by the runner. Assert it, so dropping back to a
           # runner-detected floor fails here instead of reaching a customer as
-          # "no matching distribution found".
+          # "no matching distribution found". The macOS floor is the
+          # MACOSX_DEPLOYMENT_TARGET set in build-packages.
           for wheel in build-artifacts/*.whl; do
             name=$(basename "$wheel")
             case "$name" in
-              *macosx*|*win32*|*win_amd64*|*win_arm64*) continue ;;
+              *win32*|*win_amd64*|*win_arm64*) continue ;;
+              *macosx_10_15_x86_64*|*macosx_11_0_arm64*) continue ;;
+              *macosx*) echo "::error::$name is a macOS wheel but not macosx_10_15_x86_64 or macosx_11_0_arm64"; exit 1 ;;
             esac
             case "$name" in
               *manylinux_2_28_x86_64*|*manylinux_2_28_aarch64*) ;;

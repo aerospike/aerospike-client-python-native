@@ -9,8 +9,8 @@ name = "_native"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pyo3 = { version = "0.29", default-features = false, features = ["indexmap"] }
-pyo3-async-runtimes = { version = "0.29", features = ["tokio-runtime"] }
+pyo3 = { version = "0.30", default-features = false, features = ["indexmap"] }
+pyo3-async-runtimes = { version = "0.30", features = ["tokio-runtime"] }
 tokio = "1.40"
 aerospike-core = { version = "3.0.0", features = ["rt-tokio", "dynamic-config", "serialization"] }
 hex = "0.4"
@@ -41,7 +41,7 @@ rand = { version = "0.8", features = ["small_rng"] }
 [build-dependencies]
 # Re-exports pyo3's interpreter cfgs (Py_3_13, Py_GIL_DISABLED, …) via build.rs
 # so the crate can gate FFI on the target Python ABI.
-pyo3-build-config = "0.29"
+pyo3-build-config = "0.30"
 
 [features]
 default = ["extension-module", "tls"]
