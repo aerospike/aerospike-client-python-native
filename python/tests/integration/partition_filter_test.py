@@ -13,6 +13,8 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+import asyncio
+
 import pytest
 from aerospike_native import PartitionFilter, Key, QueryPolicy, Statement, PartitionStatus, Recordset, WritePolicy
 
@@ -288,6 +290,31 @@ class TestQueryResume(TestFixtureInsertRecord):
 
         assert first_batch_count > 0
         assert resumed_count > 0
+
+    async def test_cursor_does_not_move_before_iteration(self, client):
+        """A query closed before anything is read from it leaves every record to a resume."""
+        wp = WritePolicy()
+        for i in range(1, 31):
+            await client.put(Key("test", "test", i), {"bin": i}, policy=wp)
+
+        stmt = Statement("test", "test", None)
+        total = 0
+        async for _ in await client.query(stmt, PartitionFilter.all()):
+            total += 1
+
+        records = await client.query(stmt, PartitionFilter.all())
+        records.close()
+        for _ in range(100):
+            if not records.active:
+                break
+            await asyncio.sleep(0.05)
+        cursor = await records.partition_filter()
+        assert cursor is not None
+
+        resumed = 0
+        async for _ in await client.query(stmt, cursor):
+            resumed += 1
+        assert resumed == total
 
     async def test_query_resume_complete_consumption(self, client):
         """Test resuming after fully consuming a recordset."""
