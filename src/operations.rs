@@ -2345,6 +2345,49 @@ pub(crate) fn record_batch_ops_have_write(rust_ops: &[OpWithCtx]) -> bool {
     false
 }
 
+/// Per-record operation lists of a batch, holding each run of records that
+/// passed the same list object once.
+///
+/// Core writes a record's operations in full unless they are clones of the
+/// previous record's, and a caller applying one list to every key is the
+/// common case. Extracting and converting per record would both repeat that
+/// work and hide the sharing from core.
+pub(crate) struct BatchOpLists {
+    lists: Vec<Vec<OpWithCtx>>,
+    /// For each record, its index into `lists`.
+    index: Vec<usize>,
+}
+
+impl BatchOpLists {
+    pub(crate) fn extract(operations_list: &[Bound<'_, PyAny>]) -> PyResult<Self> {
+        let mut lists: Vec<Vec<OpWithCtx>> = Vec::new();
+        let mut index = Vec::with_capacity(operations_list.len());
+        let mut prev: Option<&Bound<'_, PyAny>> = None;
+        for operations in operations_list {
+            if !prev.is_some_and(|p| p.is(operations)) {
+                let py_ops: Vec<Py<PyAny>> = operations.extract()?;
+                lists.push(extract_py_ops_with_ctx(operations.py(), &py_ops)?);
+            }
+            index.push(lists.len() - 1);
+            prev = Some(operations);
+        }
+        Ok(Self { lists, index })
+    }
+
+    /// Core operations per record, with whether they include a write. Records
+    /// that shared a list get clones of one conversion.
+    pub(crate) fn into_core(
+        self,
+    ) -> PyResult<impl Iterator<Item = (Vec<aerospike_core::operations::Operation>, bool)>> {
+        let converted = self
+            .lists
+            .iter()
+            .map(|ops| convert_ops_with_ctx_to_core(ops, true))
+            .collect::<PyResult<Vec<_>>>()?;
+        Ok(self.index.into_iter().map(move |i| converted[i].clone()))
+    }
+}
+
 /// Full operation conversion (scalar, CDT, expressions, HLL) with optional CDT context.
 /// When `disallow_hll` is true, returns `NotImplementedError` if any HLL operation is present
 /// (`batch_operate` policy).

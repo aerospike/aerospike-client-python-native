@@ -763,6 +763,28 @@ async def test_batch_operate_exp_read(exp_client_and_keys):
         assert result.record.bins["result"] == (i + 1) * 10 + 5
 
 
+async def test_batch_operate_shared_and_distinct_lists(exp_client_and_keys):
+    """Each key gets its own list's result when shared lists and others alternate."""
+    client, keys = exp_client_and_keys
+
+    def plus(n):
+        expr = FilterExpression.num_add([FilterExpression.int_bin("A"), FilterExpression.int_val(n)])
+        return [ExpOperation.read("result", expr)]
+
+    plus_five, plus_seven = plus(5), plus(7)
+    # Runs of one list object, a different list between them, then the first again.
+    pattern = [plus_five, plus_five, plus_seven, plus_five]
+    ops_list = [pattern[i % len(pattern)] for i in range(len(keys))]
+
+    results = await client.batch_operate(keys, ops_list, batch_policy=None, write_policy=None)
+
+    assert len(results) == len(keys)
+    for i, result in enumerate(results):
+        assert result.result_code == ResultCode.OK
+        added = 7 if ops_list[i] is plus_seven else 5
+        assert result.record.bins["result"] == (i + 1) * 10 + added
+
+
 async def test_batch_operate_exp_write(exp_client_and_keys):
     """Test batch_operate with ExpOperation.write across multiple keys."""
     client, keys = exp_client_and_keys

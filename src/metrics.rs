@@ -437,7 +437,7 @@ impl MetricsPolicy {
 /// values. Latency histograms are in the snapshot's latency unit; byte-size
 /// histograms are in bytes regardless of the unit.
 #[gen_stub_pyclass(module = "_native")]
-#[pyclass(skip_from_py_object, module = "_native")]
+#[pyclass(module = "_native")]
 #[derive(Debug, Clone)]
 pub struct Histogram {
     pub(crate) _as: aerospike_core::metrics::SyncHistogram,
@@ -496,7 +496,7 @@ impl Histogram {
 /// Detailed per-(namespace, command type) metrics: phase latency histograms
 /// plus byte-size histograms.
 #[gen_stub_pyclass(module = "_native")]
-#[pyclass(skip_from_py_object, module = "_native")]
+#[pyclass(module = "_native")]
 #[derive(Debug, Clone)]
 pub struct CommandMetric {
     pub(crate) _as: aerospike_core::metrics::CommandMetric,
@@ -548,7 +548,7 @@ impl CommandMetric {
 /// `connections_open` is a point-in-time gauge. Latency histogram buckets are
 /// meaningless without `latency_unit`, which is carried on the snapshot.
 #[gen_stub_pyclass(module = "_native")]
-#[pyclass(skip_from_py_object, module = "_native")]
+#[pyclass(module = "_native")]
 #[derive(Debug, Clone)]
 pub struct NodeMetricsSnapshot {
     pub(crate) _as: aerospike_core::NodeMetricsSnapshot,
@@ -772,7 +772,7 @@ impl NodeMetricsSnapshot {
 /// Cluster-wide metrics snapshot: per-node snapshots keyed by host address,
 /// a cluster-aggregated snapshot, and cluster-level counters.
 #[gen_stub_pyclass(module = "_native")]
-#[pyclass(skip_from_py_object, module = "_native")]
+#[pyclass(module = "_native")]
 #[derive(Debug, Clone)]
 pub struct ClusterMetrics {
     pub(crate) _as: aerospike_core::ClusterMetrics,

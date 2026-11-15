@@ -527,7 +527,7 @@ use crate::stream_step::{
     /// One Top-K order key of a :class:`Statement`, set with
     /// :meth:`Statement.set_order_by` or :meth:`Statement.then_order_by`.
     #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(frozen, skip_from_py_object, name = "OrderBy", module = "_native")]
+    #[pyclass(frozen, name = "OrderBy", module = "_native")]
     #[derive(Clone)]
     pub struct OrderBy {
         _as: aerospike_core::OrderBy,
