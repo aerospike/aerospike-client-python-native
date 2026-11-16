@@ -4360,6 +4360,7 @@ use crate::operations::{
             let policy = policy.map(|p| p._as.clone()).unwrap_or_default();
             let client = self._as.clone();
             let stmt = statement.clone()._as;
+            let ordered = stmt.has_order_by();
             let bridge = self.require_bridge()?;
             let recordset_bridge = bridge.clone();
 
@@ -4369,12 +4370,7 @@ use crate::operations::{
                     .await
                     .map_err(|e| PyErr::from(RustClientError(e)))?;
 
-                Ok(Recordset {
-                    _as: res,
-                    _stream: Arc::new(Mutex::new(None)),
-                    bridge: Some(recordset_bridge),
-                    buffered_streak: BufferedStreak::new(),
-                })
+                Ok(Recordset::for_async_query(res, recordset_bridge, ordered).await)
             })
         }
 
@@ -4458,6 +4454,7 @@ use crate::operations::{
             let policy = policy.map(|p| p._as.clone()).unwrap_or_default();
             let client = self._as.clone();
             let stmt = statement._as.clone();
+            let ordered = stmt.has_order_by();
             let core_plan = plan._as.clone();
             let bridge = self.require_bridge()?;
             let recordset_bridge = bridge.clone();
@@ -4468,12 +4465,7 @@ use crate::operations::{
                     .await
                     .map_err(|e| PyErr::from(RustClientError(e)))?;
 
-                Ok(Recordset {
-                    _as: res,
-                    _stream: Arc::new(Mutex::new(None)),
-                    bridge: Some(recordset_bridge),
-                    buffered_streak: BufferedStreak::new(),
-                })
+                Ok(Recordset::for_async_query(res, recordset_bridge, ordered).await)
             })
         }
 

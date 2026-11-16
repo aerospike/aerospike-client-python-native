@@ -246,6 +246,19 @@ class TestRecordsetAsyncIteration(TestFixtureConnection):
         finally:
             await client.close()
 
+    async def test_plain_query_returns_before_its_first_record(self, seeded):
+        # Under this rate limit the server sends nothing for about two
+        # seconds. The recordset has to be in the caller's hands before
+        # then, so that it can be closed while the query is still waiting.
+        policy = QueryPolicy()
+        policy.records_per_second = 1000
+        records = await self._query(seeded, policy=policy)
+        trace = []
+        with pytest.raises(AbandonedAwait):
+            await trace_await(records.__anext__(), trace, abandon_on="future")
+        assert trace == [("future",)]
+        records.close()
+
     async def test_abandoned_fairness_step_loses_no_record(self, seeded):
         records = await self._query(seeded)
         trace = []
