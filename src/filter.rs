@@ -311,21 +311,28 @@ use crate::stream_step::{
                 None => Ok(py.None()),
                 Some(partitions) => {
                     let mut py_partitions = Vec::new();
-                    for arc_mutex_status in partitions.iter() {
-                        // parking_lot Mutex: a synchronous lock, so no Tokio runtime
-                        // handle is needed — works from a Python asyncio context.
-                        let status = arc_mutex_status.lock();
-                        let py_status = PartitionStatus {
-                            _as: core_partition_status(
-                                status.id,
-                                status.retry,
-                                status.bval,
-                                status.digest,
-                                status.node.clone(),
-                                status.sequence,
+                    for (offset, slot) in partitions.iter().enumerate() {
+                        let core_status = match slot.get() {
+                            // parking_lot Mutex: a synchronous lock, so no Tokio runtime
+                            // handle is needed — works from a Python asyncio context.
+                            Some(status) => {
+                                let status = status.lock();
+                                core_partition_status(
+                                    status.id,
+                                    status.retry,
+                                    status.bval,
+                                    status.digest,
+                                    status.node.clone(),
+                                    status.sequence,
+                                )
+                            }
+                            // A partition nothing has been read from has no
+                            // status yet; it reads as a fresh one.
+                            None => aerospike_core::query::PartitionStatus::new(
+                                self._as.begin + offset,
                             ),
                         };
-                        py_partitions.push(Py::new(py, py_status)?);
+                        py_partitions.push(Py::new(py, PartitionStatus { _as: core_status })?);
                     }
                     let list = PyList::empty(py);
                     for item in py_partitions {
@@ -349,14 +356,16 @@ use crate::stream_step::{
                         // node/sequence are deliberately dropped: they name
                         // cluster topology from the cursor's previous life and
                         // must be re-resolved by the query that resumes it.
-                        rust_partitions.push(parking_lot::Mutex::new(core_partition_status(
+                        let slot = aerospike_core::query::PartitionSlot::new();
+                        *slot.get_or_init(status._as.id as usize).lock() = core_partition_status(
                             status._as.id,
                             status._as.retry,
                             status._as.bval,
                             status._as.digest,
                             None,
                             None,
-                        )));
+                        );
+                        rust_partitions.push(slot);
                     }
                     self._as.partitions = Some(Arc::new(rust_partitions));
                 }
@@ -1086,6 +1095,38 @@ use crate::stream_step::{
         }
     }
 
+    impl Recordset {
+        /// A recordset for the async query entries.
+        ///
+        /// A plain query's recordset is handed back as soon as the query is
+        /// under way, so its caller can close it before any record arrives.
+        /// An ordered query's records all arrive together once the server
+        /// has ranked them, so for one of those the wait for the first
+        /// record happens here, on the runtime: the consumer's first step
+        /// finds it buffered, and the event loop is woken once for the
+        /// query rather than once for the query and again for its first
+        /// record. Nothing is taken from the stream by waiting.
+        pub(crate) async fn for_async_query(
+            recordset: Arc<aerospike_core::Recordset>,
+            bridge: crate::completion::CompletionBridge,
+            ordered: bool,
+        ) -> Self {
+            let stream = if ordered {
+                let mut stream = open_stream(&recordset);
+                stream.as_mut().get_mut().inner_mut().ready().await;
+                Some(stream)
+            } else {
+                None
+            };
+            Recordset {
+                _as: recordset,
+                _stream: Arc::new(Mutex::new(stream)),
+                bridge: Some(bridge),
+                buffered_streak: BufferedStreak::new(),
+            }
+        }
+    }
+
     impl Clone for Recordset {
         fn clone(&self) -> Self {
             // The bridge holds a Py<...> which needs the GIL to bump
@@ -1095,7 +1136,10 @@ use crate::stream_step::{
             // for from_py_object conversions which don't iterate.
             Recordset {
                 _as: self._as.clone(),
-                _stream: Arc::new(Mutex::new(None)),
+                // Shared, not reopened: the stream may already hold records
+                // it has received, and a copy that opened its own would
+                // never see them.
+                _stream: self._stream.clone(),
                 bridge: None,
                 buffered_streak: BufferedStreak::new(),
             }

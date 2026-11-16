@@ -40,7 +40,7 @@ from aerospike_native import (
 )
 from aerospike_native.exceptions import InvalidRequest, ServerError
 from aerospike_native.exceptions import ValueError as AerospikeValueError
-from fixtures import TestFixtureCleanDB
+from fixtures import TestFixtureCleanDB, trace_await
 
 NAMESPACE = "test"
 SET = "test"
@@ -220,6 +220,19 @@ class TestTopK(TestFixtureCleanDB):
         stmt.top_k = 3
         records = await collect(client, stmt)
         assert [r.bins["score"] for r in records] == [90, 90, 70]
+
+    async def test_first_record_is_buffered_when_the_query_returns(self, client, products):
+        stmt = Statement(NAMESPACE, SET, ["id", "score"])
+        stmt.set_order_by("score", BinDataType.INTEGER, Order.DESC)
+        stmt.top_k = 3
+        records = await client.query(stmt, PartitionFilter.all(), policy=QueryPolicy())
+        trace = []
+        first = await trace_await(records.__anext__(), trace)
+        # Resolved without suspending: the event loop is not woken a second
+        # time for the first record.
+        assert trace == [()]
+        rest = [record async for record in records]
+        assert [r.bins["score"] for r in [first, *rest]] == [90, 90, 70]
 
     async def test_second_key_breaks_ties(self, client, products):
         stmt = Statement(NAMESPACE, SET, ["id", "price", "score"])
