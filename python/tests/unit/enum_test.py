@@ -301,6 +301,7 @@ class TestResultCodeCatalog:
         "INVALID_NODE_ERROR": -3,
         "PARSE_ERROR": -2,
         "CLIENT_ERROR": -1,
+        "INVALID_ARGUMENT": -28,
     }
 
     def test_every_core_client_code_is_exposed(self):

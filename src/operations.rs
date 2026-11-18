@@ -2375,14 +2375,19 @@ impl BatchOpLists {
     }
 
     /// Core operations per record, with whether they include a write. Records
-    /// that shared a list get clones of one conversion.
+    /// that shared a list share one conversion, so core sends the list once
+    /// and tells the repeats apart by pointer.
     pub(crate) fn into_core(
         self,
-    ) -> PyResult<impl Iterator<Item = (Vec<aerospike_core::operations::Operation>, bool)>> {
+    ) -> PyResult<impl Iterator<Item = (std::sync::Arc<[aerospike_core::operations::Operation]>, bool)>>
+    {
         let converted = self
             .lists
             .iter()
-            .map(|ops| convert_ops_with_ctx_to_core(ops, true))
+            .map(|ops| {
+                convert_ops_with_ctx_to_core(ops, true)
+                    .map(|(ops, has_write)| (std::sync::Arc::from(ops), has_write))
+            })
             .collect::<PyResult<Vec<_>>>()?;
         Ok(self.index.into_iter().map(move |i| converted[i].clone()))
     }

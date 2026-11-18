@@ -29,7 +29,7 @@ use tokio::sync::Mutex;
 
 use aerospike_core::query::RecordStream;
 
-use crate::CollectionIndexType;
+use crate::{BinDataType, CollectionIndexType, Order};
 use crate::cdt::CTX;
 use crate::errors::RustClientError;
 use crate::expressions::FilterExpression;
@@ -311,21 +311,28 @@ use crate::stream_step::{
                 None => Ok(py.None()),
                 Some(partitions) => {
                     let mut py_partitions = Vec::new();
-                    for arc_mutex_status in partitions.iter() {
-                        // parking_lot Mutex: a synchronous lock, so no Tokio runtime
-                        // handle is needed — works from a Python asyncio context.
-                        let status = arc_mutex_status.lock();
-                        let py_status = PartitionStatus {
-                            _as: core_partition_status(
-                                status.id,
-                                status.retry,
-                                status.bval,
-                                status.digest,
-                                status.node.clone(),
-                                status.sequence,
+                    for (offset, slot) in partitions.iter().enumerate() {
+                        let core_status = match slot.get() {
+                            // parking_lot Mutex: a synchronous lock, so no Tokio runtime
+                            // handle is needed — works from a Python asyncio context.
+                            Some(status) => {
+                                let status = status.lock();
+                                core_partition_status(
+                                    status.id,
+                                    status.retry,
+                                    status.bval,
+                                    status.digest,
+                                    status.node.clone(),
+                                    status.sequence,
+                                )
+                            }
+                            // A partition nothing has been read from has no
+                            // status yet; it reads as a fresh one.
+                            None => aerospike_core::query::PartitionStatus::new(
+                                self._as.begin + offset,
                             ),
                         };
-                        py_partitions.push(Py::new(py, py_status)?);
+                        py_partitions.push(Py::new(py, PartitionStatus { _as: core_status })?);
                     }
                     let list = PyList::empty(py);
                     for item in py_partitions {
@@ -349,14 +356,16 @@ use crate::stream_step::{
                         // node/sequence are deliberately dropped: they name
                         // cluster topology from the cursor's previous life and
                         // must be re-resolved by the query that resumes it.
-                        rust_partitions.push(parking_lot::Mutex::new(core_partition_status(
+                        let slot = aerospike_core::query::PartitionSlot::new();
+                        *slot.get_or_init(status._as.id as usize).lock() = core_partition_status(
                             status._as.id,
                             status._as.retry,
                             status._as.bval,
                             status._as.digest,
                             None,
                             None,
-                        )));
+                        );
+                        rust_partitions.push(slot);
                     }
                     self._as.partitions = Some(Arc::new(rust_partitions));
                 }
@@ -464,6 +473,116 @@ use crate::stream_step::{
                 crate::operations::convert_ops_with_ctx_to_core(&py_ops_with_ctx, false)?;
             self._as.set_operations(core_ops);
             Ok(())
+        }
+
+        /// Sets the order key of a Top-K query, replacing any keys set before.
+        ///
+        /// A Top-K query returns the ``k`` best records by this key (see
+        /// :attr:`top_k`), best first. Every node ranks its own records and the
+        /// client merges them; a record that two nodes both returned keeps its
+        /// later-updated copy. Ranking runs after the index filter and
+        /// ``QueryPolicy.filter_expression``, so it changes which matches come
+        /// back, not which records match.
+        ///
+        /// ``bin_name`` names a bin of the *returned* record: a stored bin named in
+        /// ``bins``, or one produced by exactly one :meth:`set_operations` read,
+        /// such as an ``ExpOperation.read`` of :meth:`FilterExpression.vector_distance`.
+        /// A record whose key is missing or of another type ranks last in either
+        /// direction; ties break by digest.
+        ///
+        /// Checked when the query runs, which raises :class:`ValueError` for a bin
+        /// name that is empty, longer than 15 UTF-8 bytes or holds a NUL; a key the
+        /// projection does not return; or an order key without :attr:`top_k`.
+        /// Top-K requires every node to run Aerospike Server 8.2.1 or later, and
+        /// cannot be combined with an aggregation, a background query,
+        /// ``QueryPolicy.max_records`` or a resumed partition filter.
+        pub fn set_order_by(&mut self, bin_name: &str, data_type: BinDataType, order: Order) {
+            self._as.set_order_by(bin_name, data_type.into(), order.into());
+        }
+
+        /// Adds a second order key, compared when the first key ties. It must name
+        /// a different bin; a Top-K query takes at most two keys. See
+        /// :meth:`set_order_by`.
+        pub fn then_order_by(&mut self, bin_name: &str, data_type: BinDataType, order: Order) {
+            self._as.then_order_by(bin_name, data_type.into(), order.into());
+        }
+
+        /// The Top-K order keys, in comparison order; empty for an unranked query.
+        #[getter]
+        pub fn get_order_by(&self) -> Vec<OrderBy> {
+            self._as.order_by.iter().map(|key| OrderBy { _as: key.clone() }).collect()
+        }
+
+        /// The Top-K limit ``k``, in ``[1, 1000]``, or ``None`` for an unranked
+        /// query. Requires an order key (see :meth:`set_order_by`); the two may be
+        /// set in either order.
+        #[getter]
+        pub fn get_top_k(&self) -> Option<u32> {
+            self._as.top_k
+        }
+
+        #[setter]
+        pub fn set_top_k(&mut self, k: Option<u32>) {
+            self._as.top_k = k;
+        }
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////
+    //
+    //  OrderBy
+    //
+    ////////////////////////////////////////////////////////////////////////////////////////////
+
+    /// One Top-K order key of a :class:`Statement`, set with
+    /// :meth:`Statement.set_order_by` or :meth:`Statement.then_order_by`.
+    #[gen_stub_pyclass(module = "_native")]
+    #[pyclass(frozen, name = "OrderBy", module = "_native")]
+    #[derive(Clone)]
+    pub struct OrderBy {
+        _as: aerospike_core::OrderBy,
+    }
+
+    #[gen_stub_pymethods]
+    #[pymethods]
+    impl OrderBy {
+        /// Name of the returned bin the key reads.
+        #[getter]
+        pub fn bin_name(&self) -> String {
+            self._as.bin_name.clone()
+        }
+
+        /// Declared type of the key.
+        #[getter]
+        pub fn data_type(&self) -> BinDataType {
+            self._as.order_type.into()
+        }
+
+        /// Sort direction.
+        #[getter]
+        pub fn order(&self) -> Order {
+            self._as.direction.into()
+        }
+
+        fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
+            other.cast::<OrderBy>().is_ok_and(|o| o.get()._as == self._as)
+        }
+
+        fn __hash__(&self) -> u64 {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let key = &self._as;
+            let mut hasher = DefaultHasher::new();
+            (&key.bin_name, key.order_type, key.direction).hash(&mut hasher);
+            hasher.finish()
+        }
+
+        fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+            Ok(format!(
+                "OrderBy({}, {}, {})",
+                self._as.bin_name.as_str().into_pyobject(py)?.repr()?,
+                Bound::new(py, self.data_type())?.as_any().repr()?,
+                Bound::new(py, self.order())?.as_any().repr()?,
+            ))
         }
     }
 
@@ -976,6 +1095,38 @@ use crate::stream_step::{
         }
     }
 
+    impl Recordset {
+        /// A recordset for the async query entries.
+        ///
+        /// A plain query's recordset is handed back as soon as the query is
+        /// under way, so its caller can close it before any record arrives.
+        /// An ordered query's records all arrive together once the server
+        /// has ranked them, so for one of those the wait for the first
+        /// record happens here, on the runtime: the consumer's first step
+        /// finds it buffered, and the event loop is woken once for the
+        /// query rather than once for the query and again for its first
+        /// record. Nothing is taken from the stream by waiting.
+        pub(crate) async fn for_async_query(
+            recordset: Arc<aerospike_core::Recordset>,
+            bridge: crate::completion::CompletionBridge,
+            ordered: bool,
+        ) -> Self {
+            let stream = if ordered {
+                let mut stream = open_stream(&recordset);
+                stream.as_mut().get_mut().inner_mut().ready().await;
+                Some(stream)
+            } else {
+                None
+            };
+            Recordset {
+                _as: recordset,
+                _stream: Arc::new(Mutex::new(stream)),
+                bridge: Some(bridge),
+                buffered_streak: BufferedStreak::new(),
+            }
+        }
+    }
+
     impl Clone for Recordset {
         fn clone(&self) -> Self {
             // The bridge holds a Py<...> which needs the GIL to bump
@@ -985,7 +1136,10 @@ use crate::stream_step::{
             // for from_py_object conversions which don't iterate.
             Recordset {
                 _as: self._as.clone(),
-                _stream: Arc::new(Mutex::new(None)),
+                // Shared, not reopened: the stream may already hold records
+                // it has received, and a copy that opened its own would
+                // never see them.
+                _stream: self._stream.clone(),
                 bridge: None,
                 buffered_streak: BufferedStreak::new(),
             }

@@ -279,3 +279,32 @@ def test_integer_key_vs_string_key():
     key_negative = Key("test", "test", -123)
     assert key_negative.value == -123
     assert isinstance(key_negative.value, int)
+
+def test_from_user_keys_matches_one_key_at_a_time():
+    """A bulk build gives the same keys, in order, as one constructor call each."""
+    user_keys = [7, -3, 2**40, "alice", "", b"\x00\x01", bytearray(b"raw")]
+
+    keys = Key.from_user_keys("test", "users", user_keys)
+
+    assert isinstance(keys, list)
+    assert [k.digest for k in keys] == [Key("test", "users", u).digest for u in user_keys]
+    assert [k.value for k in keys] == [Key("test", "users", u).value for u in user_keys]
+    assert all(k.namespace == "test" and k.set_name == "users" for k in keys)
+
+def test_from_user_keys_accepts_any_iterable():
+    """Tuples, ranges and generators work as well as lists; nothing in gives nothing out."""
+    expected = [Key("test", "users", i).digest for i in range(3)]
+
+    assert [k.digest for k in Key.from_user_keys("test", "users", (0, 1, 2))] == expected
+    assert [k.digest for k in Key.from_user_keys("test", "users", range(3))] == expected
+    assert [k.digest for k in Key.from_user_keys("test", "users", (i for i in range(3)))] == expected
+    assert Key.from_user_keys("test", "users", []) == []
+
+def test_from_user_keys_rejects_a_value_that_cannot_be_a_key():
+    """A float is not a key type, wherever it sits in the input."""
+    with pytest.raises(ValueError):
+        Key.from_user_keys("test", "users", [1, 2.5])
+
+def test_from_user_keys_rejects_a_non_iterable():
+    with pytest.raises(TypeError):
+        Key.from_user_keys("test", "users", 5)

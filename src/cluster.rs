@@ -163,6 +163,18 @@ use crate::policies::AdminPolicy;
             self._as.supports_query_selection()
         }
 
+        /// Returns true if server supports ``VECTOR`` values and vector-distance
+        /// expressions. Requires server >= 8.2.1.
+        pub fn supports_vector(&self) -> bool {
+            self._as.supports_vector()
+        }
+
+        /// Returns true if server supports Top-K queries (the order-by and
+        /// Top-K query fields). Requires server >= 8.2.1.
+        pub fn supports_query_top_k(&self) -> bool {
+            self._as.supports_query_top_k()
+        }
+
         pub fn __str__(&self) -> String {
             format!("{}.{}.{}.{}", self._as.major, self._as.minor, self._as.patch, self._as.build)
         }

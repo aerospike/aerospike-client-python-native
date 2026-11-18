@@ -110,6 +110,11 @@ impl<S: Stream + Unpin> Parking<S> {
         Self { inner, parked: None }
     }
 
+    /// The wrapped stream.
+    pub(crate) fn inner_mut(&mut self) -> &mut S {
+        &mut self.inner
+    }
+
     /// Hand `item` back, to be the result of the next poll.
     pub(crate) fn park(&mut self, item: Option<S::Item>) {
         self.parked = Some(item);

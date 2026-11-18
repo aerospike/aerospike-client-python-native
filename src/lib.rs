@@ -67,6 +67,7 @@ mod stream_step;
 mod string_ops;
 mod server_error;
 mod metrics;
+mod immortal;
 
 pub use enums::*;
 pub use errors::*;
@@ -4359,6 +4360,7 @@ use crate::operations::{
             let policy = policy.map(|p| p._as.clone()).unwrap_or_default();
             let client = self._as.clone();
             let stmt = statement.clone()._as;
+            let ordered = stmt.has_order_by();
             let bridge = self.require_bridge()?;
             let recordset_bridge = bridge.clone();
 
@@ -4368,12 +4370,7 @@ use crate::operations::{
                     .await
                     .map_err(|e| PyErr::from(RustClientError(e)))?;
 
-                Ok(Recordset {
-                    _as: res,
-                    _stream: Arc::new(Mutex::new(None)),
-                    bridge: Some(recordset_bridge),
-                    buffered_streak: BufferedStreak::new(),
-                })
+                Ok(Recordset::for_async_query(res, recordset_bridge, ordered).await)
             })
         }
 
@@ -4457,6 +4454,7 @@ use crate::operations::{
             let policy = policy.map(|p| p._as.clone()).unwrap_or_default();
             let client = self._as.clone();
             let stmt = statement._as.clone();
+            let ordered = stmt.has_order_by();
             let core_plan = plan._as.clone();
             let bridge = self.require_bridge()?;
             let recordset_bridge = bridge.clone();
@@ -4467,12 +4465,7 @@ use crate::operations::{
                     .await
                     .map_err(|e| PyErr::from(RustClientError(e)))?;
 
-                Ok(Recordset {
-                    _as: res,
-                    _stream: Arc::new(Mutex::new(None)),
-                    bridge: Some(recordset_bridge),
-                    buffered_streak: BufferedStreak::new(),
-                })
+                Ok(Recordset::for_async_query(res, recordset_bridge, ordered).await)
             })
         }
 
@@ -5302,13 +5295,19 @@ fn _native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Blob>()?;
     m.add_class::<GeoJSON>()?;
     m.add_class::<HLL>()?;
+    m.add_class::<Vector>()?;
+    m.add_class::<VectorElementType>()?;
 
     m.add_class::<Key>()?;
     m.add_class::<Record>()?;
     m.add_class::<Recordset>()?;
     m.add_class::<Filter>()?;
     m.add_class::<Statement>()?;
+    m.add_class::<OrderBy>()?;
+    m.add_class::<BinDataType>()?;
+    m.add_class::<Order>()?;
     m.add_class::<ExpType>()?;
+    m.add_class::<VectorDistanceMetric>()?;
     m.add_class::<FilterExpression>()?;
     m.add_class::<ServerError>()?;
     m.add_class::<Operation>()?;
@@ -5430,6 +5429,8 @@ fn _native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     exceptions_module.add("MaxErrorRate", py.get_type::<MaxErrorRate>())?;
     exceptions_module.add("ResultCode", py.get_type::<ResultCode>())?;
     m.add_submodule(&exceptions_module)?;
+
+    immortal::make_classes_immortal(m)?;
 
     Ok(())
 }

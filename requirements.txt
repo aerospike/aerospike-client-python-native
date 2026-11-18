@@ -1,4 +1,5 @@
 maturin==1.9.6
+numpy==2.5.4; python_version >= "3.12"
 pyperf==2.9.0
 pytest==9.1.1
 pytest_asyncio==1.4.0

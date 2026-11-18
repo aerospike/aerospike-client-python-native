@@ -51,6 +51,7 @@ from aerospike_native import (
     ResultCode,
     Txn,
     TxnState,
+    UDFLang,
     WritePolicy,
     new_client,
 )
@@ -183,6 +184,22 @@ async def test_txn_abort_rolls_back(sc_client, sc_key):
     wp = WritePolicy()
     wp.txn = txn
     await sc_client.put(sc_key, {"bin": 2}, policy=wp)
+
+    status = await sc_client.abort(txn)
+    assert status == AbortStatus.OK
+    assert await _get_bin(sc_client, sc_key, "bin") == 1
+
+
+async def test_txn_abort_rolls_back_a_udf_write(sc_client, sc_key):
+    udf_path = os.path.join(os.path.dirname(__file__), "udf", "record_example.lua")
+    task = await sc_client.register_udf_from_file(udf_path, "record_example.lua", UDFLang.LUA)
+    assert await task.wait_till_complete()
+    await sc_client.put(sc_key, {"bin": 1}, policy=WritePolicy())
+
+    txn = Txn()
+    wp = WritePolicy()
+    wp.txn = txn
+    await sc_client.execute_udf(sc_key, "record_example", "writeBin", ["bin", 2], policy=wp)
 
     status = await sc_client.abort(txn)
     assert status == AbortStatus.OK
