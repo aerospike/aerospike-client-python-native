@@ -6094,6 +6094,7 @@ class ResultCode:
     INVALID_NODE_ERROR: _native.ResultCode
     PARSE_ERROR: _native.ResultCode
     CLIENT_ERROR: _native.ResultCode
+    INVALID_ARGUMENT: _native.ResultCode
     @property
     def name(self) -> builtins.str:
         r"""

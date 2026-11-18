@@ -829,6 +829,10 @@ pub enum Concurrency {
     }
 
     impl ResultCode {
+        /// The client refused an argument before sending anything. Core has
+        /// no variant for this code yet, so it rides in the open-ended one.
+        pub(crate) const INVALID_ARGUMENT_CODE: i32 = -28;
+
         /// The member for a numeric code as core reports it: negative is a
         /// client code, the byte range is a server code.
         pub(crate) fn from_i32(code: i32) -> ResultCode {
@@ -914,6 +918,7 @@ pub enum Concurrency {
                         ClientResultCode::InvalidNodeError => "INVALID_NODE_ERROR",
                         ClientResultCode::ParseError => "PARSE_ERROR",
                         ClientResultCode::ClientError => "CLIENT_ERROR",
+                        ClientResultCode::Unknown(Self::INVALID_ARGUMENT_CODE) => "INVALID_ARGUMENT",
                         ClientResultCode::AsyncQueueFull | ClientResultCode::Unknown(_) => "UNKNOWN",
                         _ => "UNKNOWN",
                     };
@@ -1020,6 +1025,9 @@ pub enum Concurrency {
         fn description(&self) -> String {
             match self.0 {
                 AnyCode::Server(rc) => rc.into_string(),
+                AnyCode::Client(ClientResultCode::Unknown(Self::INVALID_ARGUMENT_CODE)) => {
+                    String::from("Invalid argument")
+                }
                 AnyCode::Client(rc) => rc.into_string(),
             }
         }
@@ -1243,6 +1251,8 @@ pub enum Concurrency {
         fn PARSE_ERROR() -> ResultCode { ResultCode::from(ClientResultCode::ParseError) }
         #[classattr]
         fn CLIENT_ERROR() -> ResultCode { ResultCode::from(ClientResultCode::ClientError) }
+        #[classattr]
+        fn INVALID_ARGUMENT() -> ResultCode { ResultCode::from_i32(Self::INVALID_ARGUMENT_CODE) }
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////
