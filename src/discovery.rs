@@ -923,16 +923,13 @@ impl PythonSeedProvider {
     }
 }
 
-/// Runs `work` on a thread that has exited before this future completes.
+/// Runs `work` off the runtime on a thread of its own that ends as soon as
+/// `work` returns.
 ///
-/// QE-1327 / CLIENT-5738: `spawn_blocking` keeps its worker on the Tokio
-/// blocking pool for the pool keep-alive (10s). M-7 counts OS threads 1.5s
-/// after connect, so that leftover worker is a background thread for a
-/// provider whose `needs_periodic_refresh` is false. A `std` thread plus a
-/// oneshot makes the same off-runtime call and is gone when `work` returns.
-/// The long-lived `aerospike-seed-refresh` thread starts only for a periodic
-/// provider.
-async fn on_short_lived_thread<T, F>(name: &str, work: F) -> CoreResult<T>
+/// `spawn_blocking` would keep an idle worker on the blocking pool for the
+/// pool's keep-alive after `work` returns, so a provider that needs no
+/// periodic refresh would leave a thread behind it.
+async fn on_short_lived_thread<T, F>(name: &str, work: F) -> Result<T, String>
 where
     T: Send + 'static,
     F: FnOnce() -> T + Send + 'static,
@@ -943,9 +940,8 @@ where
         .spawn(move || {
             let _ = tx.send(work());
         })
-        .map_err(|e| CoreError::client_error(format!("Seed candidate provider failed: {e}")))?;
-    rx.await
-        .map_err(|e| CoreError::client_error(format!("Seed candidate provider failed: {e}")))
+        .map_err(|e| e.to_string())?;
+    rx.await.map_err(|e| e.to_string())
 }
 
 impl Shared {
@@ -1025,7 +1021,10 @@ impl SeedCandidateProvider for PythonSeedProvider {
         let (shared, call_ctx) = (self.shared.clone(), ctx.clone());
         let result =
             on_short_lived_thread("aerospike-seed-once", move || shared.refresh(&call_ctx))
-                .await?
+                .await
+                .map_err(|e| {
+                    CoreError::client_error(format!("Seed candidate provider failed: {e}"))
+                })?
                 .unwrap_or_else(|| Err("the Python interpreter is shutting down".to_string()));
         if let Ok(hosts) = &result {
             self.shared.seeds.lock().clone_from(hosts);
@@ -1049,9 +1048,6 @@ impl SeedCandidateProvider for PythonSeedProvider {
         let refresher = self.refresher.lock().take();
         let shared = self.shared.clone();
         let timeout = self.refresh_timeout;
-        // Same short-lived thread as the initial refresh (QE-1327): waiting
-        // out an in-flight periodic refresh must not park a Tokio blocking
-        // worker that outlives close.
         on_short_lived_thread("aerospike-seed-close", move || match refresher {
             Some(Refresher { stop, done }) => {
                 drop(stop);
@@ -1068,6 +1064,7 @@ impl SeedCandidateProvider for PythonSeedProvider {
             None => shared.close(),
         })
         .await
+        .map_err(|e| CoreError::client_error(format!("Seed candidate provider close failed: {e}")))
     }
 
     fn name(&self) -> String {
