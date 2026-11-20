@@ -25,6 +25,7 @@ addresses the client cannot reach, so only a translation reaches the peers.
 
 import asyncio
 import os
+import socket
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -71,9 +72,10 @@ def _periodic_policy(provider: SeedCandidateProvider) -> ClientPolicy:
 class RecordingProvider(SeedCandidateProvider):
     """Returns the test seed, recording each refresh and each close."""
 
-    def __init__(self, periodic=False, refresh_delay=0.0):
+    def __init__(self, periodic=False, refresh_delay=0.0, seed=None):
         self.periodic = periodic
         self.refresh_delay = refresh_delay
+        self.seed = seed or _seed()
         self.refreshes = []
         self.closes = []
 
@@ -81,7 +83,7 @@ class RecordingProvider(SeedCandidateProvider):
         self.refreshes.append((ctx, threading.get_native_id(), time.monotonic()))
         if len(self.refreshes) > 1:
             time.sleep(self.refresh_delay)
-        return [_seed()]
+        return [self.seed]
 
     def needs_periodic_refresh(self):
         return self.periodic
@@ -147,6 +149,52 @@ class TestPythonSeedCandidateProvider:
         assert tend_iterations == sorted(tend_iterations) and tend_iterations[0] > 0
         assert len({thread for _, thread, _ in periodic}) == 1
         assert periodic[0][1] != threading.get_native_id()
+        assert len(provider.closes) == 1
+
+    async def test_non_periodic_provider_leaves_no_thread(self):
+        """A provider that needs no periodic refresh is refreshed once and leaves no thread behind."""
+        if not os.path.isdir("/proc/self/task"):
+            pytest.skip("listing the process's threads needs /proc/self/task")
+
+        def threads():
+            """Thread ID to name; the kernel truncates names to 15 characters."""
+            names = {}
+            for tid in os.listdir("/proc/self/task"):
+                try:
+                    with open(f"/proc/self/task/{tid}/comm") as comm:
+                        names[tid] = comm.read().strip()
+                except OSError:
+                    continue
+            return names
+
+        # Resolving the seed here keeps the client's own lookups, which run on
+        # the runtime's blocking pool, from adding a thread.
+        seed = _seed()
+        seed = Host(socket.gethostbyname(seed.name), seed.port)
+
+        # A first client starts the runtime's own threads before the snapshot.
+        warm_up = _policy()
+        warm_up.seed_candidate_provider = StaticSeedCandidateProvider([seed])
+        warm_up.discovery_merge_policy = SeedMergePolicy.DISCOVERY_ONLY
+        client = await new_client(warm_up, [Host("127.0.0.1", 1)])
+        await client.close()
+        before = threads()
+
+        provider = RecordingProvider(periodic=False, seed=seed)
+        cp = _policy()
+        cp.seed_candidate_provider = provider
+        cp.discovery_merge_policy = SeedMergePolicy.DISCOVERY_ONLY
+        client = await new_client(cp, [Host("127.0.0.1", 1)])
+        try:
+            await asyncio.sleep(1.5)
+            connected = threads()
+        finally:
+            await client.close()
+
+        added = {tid: name for tid, name in connected.items() if tid not in before}
+        assert not added, f"the client added threads: {added}"
+        assert not [name for name in connected.values() if name.startswith("aerospike-seed")]
+        assert len(provider.refreshes) == 1
         assert len(provider.closes) == 1
 
     async def test_close_waits_for_a_refresh_in_progress(self):
