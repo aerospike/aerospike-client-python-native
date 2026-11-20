@@ -1,9 +1,11 @@
 # Build cells for build-release.yaml, read by its plan-matrix job.
 #
-# Dev-channel builds publish only the newest Python on linux x86_64 and macOS
+# Dev-channel builds publish the newest Python on linux x86_64 and macOS
 # arm64 -- what local testing and benching use -- plus windows x64, which the
-# SDK's Windows CI job installs. Every supported version is still built and
-# tested by the PR CI, and release builds publish all of them.
+# SDK's Windows CI job installs, and 3.11 on linux x86_64 and aarch64, the
+# oldest supported Python, for consumers pinned to it. Every supported version
+# is still built and tested by the PR CI, and release builds publish all of
+# them.
 #
 #   dev: true   both release and dev builds
 #   dev: only   dev builds only
@@ -35,7 +37,7 @@ include:
     runs-on: ubuntu-22.04
     package-kind: wheel
     python-version: "3.13"
-    python-interpreter: "cp314-cp314 cp314-cp314t"
+    python-interpreter: "cp311-cp311 cp314-cp314 cp314-cp314t"
     maturin-target: ""
     manylinux: "2_28"
   - name: linux-x86_64-manylinux-py315
@@ -51,6 +53,14 @@ include:
     package-kind: wheel
     python-version: "3.13"
     python-interpreter: "cp311-cp311 cp312-cp312 cp313-cp313 cp314-cp314 cp314-cp314t"
+    maturin-target: ""
+    manylinux: "2_28"
+  - name: linux-aarch64-manylinux-dev
+    dev: only
+    runs-on: ubuntu-24.04-arm
+    package-kind: wheel
+    python-version: "3.13"
+    python-interpreter: "cp311-cp311"
     maturin-target: ""
     manylinux: "2_28"
   - name: linux-aarch64-manylinux-py315
