@@ -844,9 +844,10 @@ impl PyStubType for SeedProvider {
 /// Runs a Python seed provider for one client.
 ///
 /// A Python call cannot honor the tend task's refresh deadline: it waits for
-/// the GIL, and cancelling the future leaves the call running. So the call
-/// at construction runs on a blocking thread, later calls on a refresh
-/// thread of the adapter's own, and the tend task only reads the latest
+/// the GIL, and cancelling the future leaves the call running. The call at
+/// construction runs on a short-lived thread that exits when it returns.
+/// Later calls run on a refresh thread of the adapter's own only when
+/// `needs_periodic_refresh` is true. The tend task only reads the latest
 /// successful result.
 struct PythonSeedProvider {
     shared: Arc<Shared>,
@@ -920,6 +921,31 @@ impl PythonSeedProvider {
             ),
         }
     }
+}
+
+/// Runs `work` on a thread that has exited before this future completes.
+///
+/// QE-1327 / CLIENT-5738: `spawn_blocking` keeps its worker on the Tokio
+/// blocking pool for the pool keep-alive (10s). M-7 counts OS threads 1.5s
+/// after connect, so that leftover worker is a background thread for a
+/// provider whose `needs_periodic_refresh` is false. A `std` thread plus a
+/// oneshot makes the same off-runtime call and is gone when `work` returns.
+/// The long-lived `aerospike-seed-refresh` thread starts only for a periodic
+/// provider.
+async fn on_short_lived_thread<T, F>(name: &str, work: F) -> CoreResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    thread::Builder::new()
+        .name(name.to_string())
+        .spawn(move || {
+            let _ = tx.send(work());
+        })
+        .map_err(|e| CoreError::client_error(format!("Seed candidate provider failed: {e}")))?;
+    rx.await
+        .map_err(|e| CoreError::client_error(format!("Seed candidate provider failed: {e}")))
 }
 
 impl Shared {
@@ -997,10 +1023,10 @@ impl SeedCandidateProvider for PythonSeedProvider {
         }
         *self.shared.ctx.lock() = ctx.clone();
         let (shared, call_ctx) = (self.shared.clone(), ctx.clone());
-        let result = tokio::task::spawn_blocking(move || shared.refresh(&call_ctx))
-            .await
-            .map_err(|e| CoreError::client_error(format!("Seed candidate provider failed: {e}")))?
-            .unwrap_or_else(|| Err("the Python interpreter is shutting down".to_string()));
+        let result =
+            on_short_lived_thread("aerospike-seed-once", move || shared.refresh(&call_ctx))
+                .await?
+                .unwrap_or_else(|| Err("the Python interpreter is shutting down".to_string()));
         if let Ok(hosts) = &result {
             self.shared.seeds.lock().clone_from(hosts);
         }
@@ -1023,7 +1049,10 @@ impl SeedCandidateProvider for PythonSeedProvider {
         let refresher = self.refresher.lock().take();
         let shared = self.shared.clone();
         let timeout = self.refresh_timeout;
-        tokio::task::spawn_blocking(move || match refresher {
+        // Same short-lived thread as the initial refresh (QE-1327): waiting
+        // out an in-flight periodic refresh must not park a Tokio blocking
+        // worker that outlives close.
+        on_short_lived_thread("aerospike-seed-close", move || match refresher {
             Some(Refresher { stop, done }) => {
                 drop(stop);
                 if done.recv_timeout(timeout).is_err() {
@@ -1039,7 +1068,6 @@ impl SeedCandidateProvider for PythonSeedProvider {
             None => shared.close(),
         })
         .await
-        .map_err(|e| CoreError::client_error(format!("Seed candidate provider close failed: {e}")))
     }
 
     fn name(&self) -> String {

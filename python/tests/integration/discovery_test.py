@@ -149,6 +149,55 @@ class TestPythonSeedCandidateProvider:
         assert periodic[0][1] != threading.get_native_id()
         assert len(provider.closes) == 1
 
+    async def test_non_periodic_provider_adds_no_os_thread(self):
+        """QE-1327: needs_periodic_refresh False refreshes once and leaves no OS thread.
+
+        M-7 counts /proc/self/task 1.5s after connect. A Tokio blocking-pool
+        worker outlives the one-shot call for the pool keep-alive, so the
+        non-periodic provider must not use that pool.
+        """
+        if not os.path.isdir("/proc/self/task"):
+            pytest.skip("OS thread count is /proc/self/task")
+
+        def task_comms():
+            comms = []
+            for tid in os.listdir("/proc/self/task"):
+                try:
+                    with open(f"/proc/self/task/{tid}/comm") as comm:
+                        comms.append(comm.read().strip())
+                except OSError:
+                    continue
+            return comms
+
+        static = _policy()
+        static.seed_candidate_provider = StaticSeedCandidateProvider([_seed()])
+        static.discovery_merge_policy = SeedMergePolicy.DISCOVERY_ONLY
+        client = await new_client(static, [Host("127.0.0.1", 1)])
+        try:
+            await asyncio.sleep(1.5)
+            baseline = task_comms()
+        finally:
+            await client.close()
+
+        provider = RecordingProvider(periodic=False)
+        cp = _policy()
+        cp.seed_candidate_provider = provider
+        cp.discovery_merge_policy = SeedMergePolicy.DISCOVERY_ONLY
+        client = await new_client(cp, [Host("127.0.0.1", 1)])
+        try:
+            await asyncio.sleep(1.5)
+            non_periodic = task_comms()
+        finally:
+            await client.close()
+
+        assert "aerospike-seed-refresh" not in non_periodic
+        assert "aerospike-seed-once" not in non_periodic
+        assert len(non_periodic) == len(baseline), (
+            "QE-1327: a non-periodic provider changed the thread count: "
+            "baseline=%s non_periodic=%s" % (sorted(baseline), sorted(non_periodic))
+        )
+        assert len(provider.refreshes) == 1
+
     async def test_close_waits_for_a_refresh_in_progress(self):
         provider = RecordingProvider(periodic=True, refresh_delay=1.0)
         client = await new_client(_periodic_policy(provider), [])
