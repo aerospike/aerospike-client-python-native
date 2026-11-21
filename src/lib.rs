@@ -5296,8 +5296,6 @@ fn _native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ErrorDetailVerbosity>()?;
     m.add_class::<ExpressionTrace>()?;
 
-    m.add_class::<List>()?;
-    m.add_class::<Map>()?;
     m.add_class::<SortedMap>()?;
     m.add_class::<Blob>()?;
     m.add_class::<GeoJSON>()?;

@@ -14,14 +14,12 @@
 # the License.
 
 import pytest
-from aerospike_native import GeoJSON, List, Blob, HLL, Map, geojson, null
+from aerospike_native import GeoJSON, Blob, HLL, Key, geojson, null
 
 # Common test data
 TEST_BLOB_DATA_1 = [1, 7, 8, 4, 1]
 TEST_BLOB_DATA_2 = [1, 7, 8, 4]
 TEST_BLOB_DATA_3 = [1, 2, 3]
-TEST_LIST_DATA_1 = [1, 2, [1, 2, 3], {1: "str", "str": [1, 2, True]}]
-TEST_LIST_DATA_2 = [1, 2, 3]
 
 def test_geo_json_equality():
     """Test GeoJSON object creation and equality."""
@@ -101,192 +99,6 @@ def test_geo_json_from_dict_equality():
     # Note: JSON serialization may add/remove spaces, so compare parsed values
     import json
     assert json.loads(geo_from_dict.value) == json.loads(geo_from_str.value)
-
-def test_list_equality():
-    """Test List object creation and equality."""
-
-    _list = TEST_LIST_DATA_1
-    as_l = List(_list)
-    as_l2 = List(_list)
-
-    assert as_l == _list == as_l2
-
-def test_list_inequality():
-    """Test List object inequality."""
-
-    as_l = List(TEST_LIST_DATA_1)
-    different_list = TEST_LIST_DATA_2
-    as_l2 = List(TEST_LIST_DATA_2)
-
-    assert as_l != different_list
-    assert as_l != as_l2
-
-def test_list_set_and_get():
-    """Test List value setting and getting."""
-
-    as_l = List(TEST_LIST_DATA_1)
-    as_l.value = [1]
-    assert as_l.value == [1]
-
-def test_list_str_repr():
-    """Test List string representation."""
-
-    as_l = List(TEST_LIST_DATA_1)
-    
-    assert str(as_l) == '[1, 2, [1, 2, 3], {"str": [1, 2, True], 1: "str"}]'
-    assert repr(as_l) == 'List([1, 2, [1, 2, 3], {"str": [1, 2, True], 1: "str"}])'
-
-def test_list_iteration():
-    """Test List iteration."""
-
-    as_l = List([1, 2, 3, 4])
-    for i, v in enumerate(as_l, start=1):
-        assert i == v
-
-def test_list_get_and_set():
-    """Test List indexing and assignment."""
-
-    as_l = List(TEST_LIST_DATA_1)
-    assert as_l[0] == 1
-    as_l[0] = "0"
-    assert as_l[0] == "0"
-
-def test_list_get_out_of_bounds():
-    """Test List indexing out of bounds raises IndexError."""
-
-    as_l = List(TEST_LIST_DATA_1)
-    with pytest.raises(IndexError) as exc_info:
-        as_l[5]
-    assert exc_info.value.args[0] == "index out of bounds"
-
-def test_list_set_out_of_bounds():
-    """Test List assignment out of bounds raises IndexError."""
-
-    as_l = List(TEST_LIST_DATA_1)
-    with pytest.raises(IndexError) as exc_info:
-        as_l[5] = 0
-    assert exc_info.value.args[0] == "index out of bounds"
-
-def test_list_length():
-    """Test List length."""
-
-    as_l = List(TEST_LIST_DATA_1)
-    assert len(as_l) == 4
-
-def test_list_contains():
-    """Test List contains operator."""
-
-    as_l = List(TEST_LIST_DATA_1)
-    assert 1 in as_l
-
-def test_list_delete():
-    """Test List item deletion."""
-
-    lst = List(TEST_LIST_DATA_2)
-    del lst[0]
-    assert lst == List([2, 3])
-
-def test_list_concat():
-    """Test List concatenation."""
-
-    l1 = List([1])
-    l2 = List([2])
-    assert List([1, 2]) == l1 + l2
-
-def test_list_repeat():
-    """Test List repetition."""
-
-    lst = List([1])
-    assert lst * 3 == List([1, 1, 1])
-
-def test_list_inplace_concat():
-    """Test List in-place concatenation."""
-
-    lst = List([1])
-    lst += List([2, 3])
-    assert lst == List(TEST_LIST_DATA_2)
-
-def test_list_inplace_repeat():
-    """Test List in-place repetition."""
-
-    lst = List([1])
-    lst *= 3
-    assert lst == List([1, 1, 1])
-
-def test_list_hash():
-    """Test List hashing for dictionary keys."""
-
-    as_l = List(TEST_LIST_DATA_1)
-    # Note: List objects cannot be used as dictionary keys due to HashMap limitations
-    # d = {1: as_l, as_l: 1}
-    # d2 = {1: as_l, as_l: 1}
-    # assert d == d2
-    assert isinstance(as_l, List)
-
-def test_list_use_as_native_type():
-    """Test List isinstance check."""
-
-    as_l = List(TEST_LIST_DATA_1)
-    # Note: List objects are not instances of Python list
-    # assert isinstance(as_l, list)
-    assert isinstance(as_l, List)
-
-def test_map_set_and_get():
-    """Test Map value setting and getting."""
-
-    m = Map({"a": 1})
-    m.value = {"a": 2}
-    assert m.value == {"a": 2}
-
-def test_map_equality():
-    """Test Map object equality."""
-
-    m = Map({"a": 1})
-    native_m = {"a": 1}
-    m2 = Map({"a": 1})
-    
-    assert m == m2
-    assert m == native_m
-
-def test_map_inequality():
-    """Test Map object inequality."""
-
-    m = Map({"a": 1})
-    native_m = {"a": 2}
-    m2 = Map({"a": 2})
-    
-    assert m != m2
-    assert m != native_m
-
-def test_map_use_as_native_type():
-    """Test Map isinstance check."""
-
-    m = Map({"a": 1})
-    # Note: Map objects are not instances of Python dict
-    # assert isinstance(m, dict)
-    assert isinstance(m, Map)
-
-def test_map_hash():
-    """Test Map hashing for dictionary keys."""
-
-    # Note: Map objects cannot be used as dictionary keys
-    # native_m1 = {Map({"a": 1}): 1}
-    # native_m2 = {Map({"a": 1}): 1}
-    # assert native_m1 == native_m2
-    m = Map({"a": 1})
-    assert isinstance(m, Map)
-
-def test_map_str():
-    """Test Map string representation."""
-
-    m = Map({"a": 1})
-    assert str(m) == '{"a": 1}'
-
-def test_map_repr():
-    """Test Map repr representation."""
-
-    m = Map({"a": 1})
-    assert repr(m) == 'Map({"a": 1})'
 
 def test_blob_set_and_get():
     """Test Blob value setting and getting."""
@@ -482,54 +294,35 @@ def test_null_function():
     assert null_val is None
 
 
-def test_none_converts_to_nil():
-    """Test that Python None converts to PythonValue::Nil."""
-    # This test verifies that None is handled correctly in value conversion
-    # None in a list should be preserved as None
-    from aerospike_native import List as ASList
-    test_list = ASList([1, None, 3])
-    # None should be preserved when converting back
-    assert test_list[1] is None
-
-
 def test_u64_large_integer():
     """Test that large positive integers (u64) overflow to negative i64.
-    
+
     Note: Since Value::UInt was removed from the Rust core, values > i64::MAX
     will overflow when converted to i64. This test verifies the overflow behavior.
+    A key's user value goes through the same conversion as a bin value and
+    reads back without a server.
     """
-    from aerospike_native import List as ASList, Map as ASMap
-    
     # i64::MAX is 9223372036854775807
     # Test with a value larger than i64::MAX - it will overflow to negative
     large_uint = 2**63 + 1000  # 9223372036854775808 + 1000
     # This overflows: 9223372036854776808 -> -9223372036854774808 (i64::MIN + (value - i64::MAX - 1))
     expected_overflow = large_uint - 2**64  # Overflow calculation
-    
-    # This will overflow when converted to i64
-    test_list = ASList([large_uint])
-    assert test_list[0] == expected_overflow
-    
-    # Test in a map value
-    test_map = ASMap({1: large_uint})
-    assert test_map.value[1] == expected_overflow
+
+    assert Key("test", "values", large_uint).value == expected_overflow
 
 
 def test_u64_boundary_values():
     """Test u64 boundary values (i64::MAX and i64::MAX + 1).
-    
+
     Note: Since Value::UInt was removed from the Rust core, i64::MAX + 1
     will overflow to i64::MIN when converted to i64.
     """
-    from aerospike_native import List as ASList
-    
     i64_max = 2**63 - 1  # 9223372036854775807
     i64_max_plus_one = 2**63  # 9223372036854775808
-    
+
     # i64_max works fine, but i64_max_plus_one overflows to i64::MIN
-    test_list = ASList([i64_max, i64_max_plus_one])
-    assert test_list[0] == i64_max
-    assert test_list[1] == -9223372036854775808  # i64::MIN (overflow)
+    assert Key("test", "values", i64_max).value == i64_max
+    assert Key("test", "values", i64_max_plus_one).value == -9223372036854775808  # i64::MIN (overflow)
 
 
 def test_special_value_enum_distinct():
