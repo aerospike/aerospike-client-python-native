@@ -26,8 +26,8 @@ use crate::errors::RustClientError;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum TaskStatus {
         #[pyo3(name = "NOT_FOUND")]
@@ -121,8 +121,8 @@ use crate::errors::RustClientError;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
     pub struct RegisterTask {
         pub(crate) _as: aerospike_core::RegisterTask,
@@ -254,8 +254,8 @@ use crate::errors::RustClientError;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
     pub struct UdfRemoveTask {
         pub(crate) _as: aerospike_core::UdfRemoveTask,
@@ -375,8 +375,8 @@ use crate::errors::RustClientError;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
     pub struct IndexTask {
         pub(crate) _as: aerospike_core::IndexTask,
@@ -484,8 +484,8 @@ use crate::errors::RustClientError;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
     pub struct DropIndexTask {
         pub(crate) _as: aerospike_core::DropIndexTask,
@@ -593,8 +593,8 @@ use crate::errors::RustClientError;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
     pub struct ExecuteTask {
         pub(crate) _as: aerospike_core::ExecuteTask,

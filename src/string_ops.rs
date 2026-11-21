@@ -52,8 +52,8 @@ use crate::operations::OperationType;
 ///
 /// ``CREATE_ONLY`` and ``UPDATE_ONLY`` are mutually exclusive; sending both
 /// is a server ``ParameterError``.
-#[gen_stub_pyclass_enum(module = "_native")]
-#[pyclass(from_py_object, name = "StringWriteFlags", module = "_native")]
+#[gen_stub_pyclass_enum]
+#[pyclass(from_py_object, name = "StringWriteFlags", module = "aerospike_native._native")]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StringWriteFlags {
@@ -195,8 +195,8 @@ pub(crate) fn string_write_flags_from_py(ob: &Bound<'_, PyAny>) -> PyResult<u8> 
 
 /// ICU regex flags for `regex_compare` and `regex_replace`. Combine with
 /// bitwise OR. Default is no flags.
-#[gen_stub_pyclass_enum(module = "_native")]
-#[pyclass(from_py_object, name = "StringRegexFlags", module = "_native")]
+#[gen_stub_pyclass_enum]
+#[pyclass(from_py_object, name = "StringRegexFlags", module = "aerospike_native._native")]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StringRegexFlags {
@@ -332,8 +332,8 @@ pub(crate) fn string_regex_flags_from_py(ob: &Bound<'_, PyAny>) -> PyResult<u8> 
 /// Numeric-type filter for `StringOperation.is_numeric`. Default `ANY`
 /// matches integers or floats; restrict to one or the other with `INT` /
 /// `FLOAT`.
-#[gen_stub_pyclass_enum(module = "_native")]
-#[pyclass(from_py_object, name = "StringNumericType", module = "_native")]
+#[gen_stub_pyclass_enum]
+#[pyclass(from_py_object, name = "StringNumericType", module = "aerospike_native._native")]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StringNumericType {
@@ -422,8 +422,8 @@ impl StringNumericType {
 /// CTX navigation: every factory (except ``to_string``) accepts an optional
 /// trailing ``ctx`` argument selecting a string element nested inside a
 /// list/map bin. With ``ctx=None`` the op targets the bin itself.
-#[gen_stub_pyclass(module = "_native")]
-#[pyclass(from_py_object, subclass)]
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, subclass, module = "aerospike_native._native")]
 #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
 #[derive(Clone, Debug)]
 pub struct StringOperation {

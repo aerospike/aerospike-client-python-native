@@ -30,8 +30,8 @@ use crate::record::PythonValue;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, name = "ListOrderType", module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, name = "ListOrderType", module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum ListOrderType {
         /// List is not ordered. This is the default.
@@ -76,8 +76,8 @@ use crate::record::PythonValue;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, name = "ListWriteFlags", module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, name = "ListWriteFlags", module = "aerospike_native._native")]
     #[repr(u8)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum ListWriteFlags {
@@ -205,8 +205,8 @@ use crate::record::PythonValue;
     /// 
     /// Example:
     ///     combined = ListReturnType.VALUE | ListReturnType.INVERTED
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, name = "ListReturnType", module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, name = "ListReturnType", module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct ListReturnType(u32);
 
@@ -320,8 +320,8 @@ use crate::record::PythonValue;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, name = "ListSortFlags", module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, name = "ListSortFlags", module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum ListSortFlags {
         /// Default. Preserve duplicate values when sorting list.
@@ -370,8 +370,8 @@ use crate::record::PythonValue;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, name = "MapOrder", module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, name = "MapOrder", module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum MapOrder {
         /// Map is not ordered. This is the default.
@@ -420,8 +420,8 @@ use crate::record::PythonValue;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, name = "MapWriteMode", module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, name = "MapWriteMode", module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum MapWriteMode {
         /// If the key already exists, the item will be overwritten.
@@ -474,8 +474,8 @@ use crate::record::PythonValue;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, name = "MapWriteFlags", module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, name = "MapWriteFlags", module = "aerospike_native._native")]
     #[repr(u8)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum MapWriteFlags {
@@ -596,8 +596,8 @@ use crate::record::PythonValue;
     /// 
     /// Example:
     ///     combined = MapReturnType.VALUE | MapReturnType.INVERTED
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, name = "MapReturnType", module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, name = "MapReturnType", module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct MapReturnType(u32);
 
@@ -729,8 +729,8 @@ use crate::record::PythonValue;
 
     /// Context for nested CDT (Complex Data Type) operations.
     /// Used to specify the location of nested lists/maps within a record.
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, name = "CTX", module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, name = "CTX", module = "aerospike_native._native")]
     #[derive(Clone, Debug, PartialEq)]
     pub struct CTX {
         pub(crate) ctx: aerospike_core::operations::cdt_context::CdtContext,
@@ -742,7 +742,12 @@ use crate::record::PythonValue;
     #[pymethods]
     impl CTX {
         /// Compare two CTX objects for equality.
-        fn __eq__(&self, other: &CTX) -> bool {
+        fn __eq__(
+            &self,
+            // Any other object compares unequal, so the stub takes `object`.
+            #[gen_stub(override_type(type_repr = "builtins.object", imports = ("builtins")))]
+            other: &CTX,
+        ) -> bool {
             self.ctx == other.ctx
         }
 
@@ -950,8 +955,8 @@ use crate::record::PythonValue;
             ctx.ctx.clone()
         }
     }
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, name = "BitwiseResizeFlags", module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, name = "BitwiseResizeFlags", module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum BitwiseResizeFlags {
         #[pyo3(name = "DEFAULT")]
@@ -979,8 +984,8 @@ use crate::record::PythonValue;
     impl BitwiseResizeFlags {
     }
 
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, name = "BitWriteFlags", module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, name = "BitWriteFlags", module = "aerospike_native._native")]
     #[repr(u8)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum BitWriteFlags {
@@ -1086,8 +1091,8 @@ use crate::record::PythonValue;
         }
     }
 
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, name = "BitwiseOverflowActions", module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, name = "BitwiseOverflowActions", module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum BitwiseOverflowActions {
         #[pyo3(name = "FAIL")]
@@ -1118,10 +1123,10 @@ use crate::record::PythonValue;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object,
         name = "BitPolicy",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
@@ -1186,10 +1191,10 @@ use crate::record::PythonValue;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object,
         name = "ListPolicy",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
@@ -1275,8 +1280,8 @@ use crate::record::PythonValue;
     ////////////////////////////////////////////////////////////////////////////////////////////
 
     /// HLL write flags for HLL operations.
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, name = "HLLWriteFlags", module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, name = "HLLWriteFlags", module = "aerospike_native._native")]
     #[repr(u8)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum HLLWriteFlags {
@@ -1396,10 +1401,10 @@ use crate::record::PythonValue;
     ////////////////////////////////////////////////////////////////////////////////////////////
 
     /// HLL policy for HLL operations and expressions.
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object,
         name = "HLLPolicy",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
@@ -1449,10 +1454,10 @@ use crate::record::PythonValue;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object,
         name = "MapPolicy",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]

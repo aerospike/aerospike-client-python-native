@@ -17,7 +17,7 @@ import os
 import pytest
 import pytest_asyncio
 
-from aerospike_native import new_client, ClientPolicy, WritePolicy, ReadPolicy, Key, Blob, List, GeoJSON, geojson, null
+from aerospike_native import new_client, ClientPolicy, WritePolicy, ReadPolicy, Key, Blob, GeoJSON, geojson, null
 from aerospike_native.exceptions import ResultCode, InvalidRequest
 
 
@@ -161,7 +161,7 @@ async def test_put_dict(client_and_key):
     client, rp, key = client_and_key
 
     b = Blob(b"Some bytes")
-    lst = List([1572, 3.1415])
+    lst = [1572, 3.1415]
     d = {
         "str": 1,
         1: "str",
@@ -186,8 +186,7 @@ async def test_put_dict(client_and_key):
     rec = await client.get(key, policy=rp)
     assert rec is not None
 
-    # List and Blob are returned as native Python types
-    # Blob objects become bytes, List objects become lists
+    # Blob objects are returned as bytes
     expected = {
         "bin": {
             "str": 1,
@@ -198,7 +197,7 @@ async def test_put_dict(client_and_key):
             9182: False,
             3: [123, 981, 4.12345, [1858673, "str"]],
             "false_key": {"something": [123, 981, 4.12345, [1858673, "str"]]},
-            "list_key": [1572, 3.1415],  # List converted to list
+            "list_key": [1572, 3.1415],
         }
     }
     assert rec.bins == expected
@@ -238,7 +237,7 @@ async def test_geojson_get_round_trip_preserves_type_and_string(client_and_key):
 
 
 async def test_put_edge_types(client_and_key):
-    """Test putting edge case types: None, null(), large u64 (in List), and geojson helper."""
+    """Test putting edge case types: None, null(), large u64 (in a list), and geojson helper."""
     client, rp, key = client_and_key
 
     wp = WritePolicy()
@@ -260,11 +259,11 @@ async def test_put_edge_types(client_and_key):
     assert "b" not in rec.bins  # Nil bins are not returned
     assert rec.bins["placeholder"] == 1
 
-    # Put large u64 value in a List (u64 cannot be stored directly as a bin value)
+    # Put large u64 value in a list (u64 cannot be stored directly as a bin value)
     # 2^63 = 9223372036854775808, which is > i64::MAX
     # Note: Since Value::UInt was removed, this will overflow to i64::MIN
     large_value = 2 ** 63
-    await client.put(key, {"c": List([large_value])}, policy=wp)
+    await client.put(key, {"c": [large_value]}, policy=wp)
 
     # Put geojson helper result
     await client.put(key, {"geo": geojson("-122.0, 37.5")}, policy=wp)
@@ -277,11 +276,21 @@ async def test_put_edge_types(client_and_key):
     # Large u64 value overflowed to i64::MIN
     assert rec.bins["c"][0] == -9223372036854775808  # i64::MIN (overflow from 2**63)
     assert rec.bins["placeholder"] == 1
-    # Verify u64 in List (2**63 overflows to i64::MIN since UInt was removed)
-    # List returns as Python native list
+    # Verify u64 in a list (2**63 overflows to i64::MIN since UInt was removed)
     assert isinstance(rec.bins["c"], list)
     assert rec.bins["c"][0] == -9223372036854775808  # i64::MIN (overflow from 2**63)
     assert isinstance(rec.bins["geo"], GeoJSON)
+
+async def test_put_collection_elements_convert_like_scalars(client_and_key):
+    """None inside a list is kept, and a large u64 inside a map overflows as it does anywhere."""
+    client, rp, key = client_and_key
+
+    large_uint = 2**63 + 1000
+    await client.put(key, {"lst": [1, None, 3], "map": {1: large_uint}}, policy=WritePolicy())
+
+    rec = await client.get(key, policy=rp)
+    assert rec.bins["lst"] == [1, None, 3]
+    assert rec.bins["map"] == {1: large_uint - 2**64}
 
 async def test_put_bin_name_int_negative(client_and_key):
     """Negative test: bin names must be strings, not integers."""
