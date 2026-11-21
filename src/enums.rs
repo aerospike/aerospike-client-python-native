@@ -26,8 +26,8 @@ use aerospike_core::{ClientResultCode, ResultCode as CoreResultCode};
 
     /// Expected query duration. The server treats the query in different ways depending on the expected duration.
     /// This enum is ignored for aggregation queries, background queries and server versions < 6.0.
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum QueryDuration {
         /// Long specifies that the query is expected to return more than 100 records per node.
@@ -87,8 +87,8 @@ use aerospike_core::{ClientResultCode, ResultCode as CoreResultCode};
     ////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Priority of operations on database server.
-#[gen_stub_pyclass_enum(module = "_native")]
-#[pyclass(from_py_object, module = "_native")]
+#[gen_stub_pyclass_enum]
+#[pyclass(from_py_object, module = "aerospike_native._native")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Replica {
     #[pyo3(name = "MASTER")]
@@ -154,8 +154,8 @@ pub enum Replica {
 
 /// Whether a command that spans multiple cluster nodes runs the per-node
 /// requests one at a time or all at once. Applies to batch commands.
-#[gen_stub_pyclass_enum(module = "_native")]
-#[pyclass(from_py_object, module = "_native")]
+#[gen_stub_pyclass_enum]
+#[pyclass(from_py_object, module = "aerospike_native._native")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Concurrency {
     /// Issue the per-node requests sequentially, one node at a time.
@@ -212,8 +212,8 @@ pub enum Concurrency {
     /// Read policy for AP (availability) namespaces.
     /// Indicates how duplicates should be consulted in a read operation.
     /// Only makes a difference during migrations and only applicable in AP mode.
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum ReadModeAP {
         /// A single node should be involved in the read operation.
@@ -269,8 +269,8 @@ pub enum Concurrency {
 
     /// Read policy for SC (strong consistency) namespaces.
     /// Determines SC read consistency options.
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum ReadModeSC {
         /// Ensures this client will only see an increasing sequence of record versions.
@@ -339,8 +339,8 @@ pub enum Concurrency {
     ////////////////////////////////////////////////////////////////////////////////////////////
 
     /// `RecordExistsAction` determines how to handle record writes based on record generation.
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, module = "aerospike_native._native")]
     #[derive(Debug, PartialEq, Eq, Hash, Clone)]
     pub enum RecordExistsAction {
         #[pyo3(name = "UPDATE")]
@@ -416,8 +416,8 @@ pub enum Concurrency {
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, module = "aerospike_native._native")]
     #[derive(Debug, PartialEq, Eq, Hash, Clone)]
     pub enum GenerationPolicy {
         #[pyo3(name = "NONE")]
@@ -481,8 +481,8 @@ pub enum Concurrency {
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum CommitLevel {
         #[pyo3(name = "COMMIT_ALL")]
@@ -534,10 +534,10 @@ pub enum Concurrency {
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "Expiration",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
@@ -633,8 +633,8 @@ pub enum Concurrency {
     ////////////////////////////////////////////////////////////////////////////////////////////
 
     /// Underlying data type of secondary index.
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy)]
     pub enum IndexType {
         #[pyo3(name = "NUMERIC")]
@@ -676,8 +676,8 @@ pub enum Concurrency {
     ////////////////////////////////////////////////////////////////////////////////////////////
 
     /// Secondary index collection type.
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy)]
     pub enum CollectionIndexType {
         #[pyo3(name = "DEFAULT")]
@@ -712,8 +712,8 @@ pub enum Concurrency {
     impl CollectionIndexType {
     }
     /// User-defined function (UDF) language.
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy)]
     pub enum UDFLang {
         /// Lua embedded programming language.
@@ -737,8 +737,8 @@ pub enum Concurrency {
         }
     }
     /// Authentication mode for client connections.
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum AuthMode {
         /// No authentication will be performed.
@@ -811,8 +811,8 @@ pub enum Concurrency {
     /// Compares equal to another member with the same code and to that
     /// code as an ``int`` (``ResultCode.KEY_EXISTS_ERROR == 5``), and hashes
     /// like that ``int``.
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, name = "ResultCode", module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, name = "ResultCode", module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy)]
     pub struct ResultCode(pub(crate) AnyCode);
 
@@ -1251,8 +1251,8 @@ pub enum Concurrency {
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum TxnState {
         #[pyo3(name = "OPEN")]
@@ -1307,8 +1307,8 @@ pub enum Concurrency {
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum CommitStatus {
         #[pyo3(name = "OK")]
@@ -1364,8 +1364,8 @@ pub enum Concurrency {
     /// verify failure leaves nothing applied; ``MARK_ROLL_FORWARD_ABANDONED``
     /// means the server will abort; ``ROLL_FORWARD_ABANDONED`` means the
     /// writes are not yet visible and the server will eventually commit.
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum CommitErrorType {
         #[pyo3(name = "VERIFY_FAIL")]
@@ -1427,8 +1427,8 @@ pub enum Concurrency {
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum AbortStatus {
         #[pyo3(name = "OK")]
@@ -1488,8 +1488,8 @@ pub enum Concurrency {
     /// ``FilterExpression.int_loop_var``, ``FilterExpression.map_loop_var``, etc.
     ///
     /// Requires Aerospike Server version >= 8.1.1.
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, name = "LoopVarPart", module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, name = "LoopVarPart", module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct LoopVarPart(pub i64);
 
@@ -1552,8 +1552,8 @@ pub enum Concurrency {
     /// ``int`` and can be passed directly to ``CdtOperation.select_by_path(..., flag=...)``.
     ///
     /// Requires Aerospike Server version >= 8.1.1.
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(name = "SelectFlags", module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(name = "SelectFlags", module = "aerospike_native._native")]
     pub struct SelectFlags;
 
     #[gen_stub_pymethods]
@@ -1595,8 +1595,8 @@ pub enum Concurrency {
     /// ``int`` and can be passed directly to ``CdtOperation.modify_by_path(..., flag=...)``.
     ///
     /// Requires Aerospike Server version >= 8.1.1.
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(name = "ModifyFlags", module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(name = "ModifyFlags", module = "aerospike_native._native")]
     pub struct ModifyFlags;
 
     #[gen_stub_pymethods]

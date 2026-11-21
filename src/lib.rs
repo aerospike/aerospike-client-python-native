@@ -102,7 +102,7 @@ use crate::operations::{
      * Client
      *
      **********************************************************************************/
-    #[gen_stub_pyfunction(module = "_native")]
+    #[gen_stub_pyfunction]
     #[pyfunction]
     #[gen_stub(override_return_type(type_repr="typing.Awaitable[Client]", imports=("typing")))]
     pub fn new_client(py: Python, policy: ClientPolicy, seeds: Seeds) -> PyResult<Py<PyAny>> {
@@ -177,8 +177,8 @@ use crate::operations::{
     ///     txn = aerospike_native.Txn()
     ///     # use txn in put/get policy.txn field
     ///     status = await client.commit(txn)
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, module = "aerospike_native._native")]
     #[derive(Clone)]
     pub struct Txn {
         pub(crate) _as: Arc<aerospike_core::Txn>,
@@ -366,8 +366,8 @@ use crate::operations::{
     /// methodology stays consistent across language layers.
     ///
     /// Not thread-safe — construct one per worker thread / task.
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(module = "aerospike_native._native")]
     pub struct FastRng {
         inner: rand::rngs::SmallRng,
     }
@@ -427,8 +427,8 @@ use crate::operations::{
     /// Default users should stick with [`Client`]. Underscore-prefixed name
     /// signals private / unstable status; opt in via PSDK's
     /// `SyncClient(current_thread_runtime=True)`.
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(unsendable, module = "_native", name = "_LocalClient")]
+    #[gen_stub_pyclass]
+    #[pyclass(unsendable, module = "aerospike_native._native", name = "_LocalClient")]
     pub struct LocalClient {
         rt: tokio::runtime::Runtime,
         client: Arc<aerospike_core::Client>,
@@ -721,8 +721,8 @@ use crate::operations::{
         }
     }
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass)]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
     #[derive(Clone)]
     pub struct Client {
@@ -836,10 +836,10 @@ use crate::operations::{
     /// (`Client.batch_stream_blocking`) has no bridge and rejects
     /// `__anext__` with a clear error: use sync iteration on those, or
     /// recreate the stream via `batch_stream` in an async context.
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(
         name = "BatchRecordStream",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     pub struct BatchRecordStream {
@@ -5095,7 +5095,7 @@ use crate::operations::{
 /// Return a null value for use in Aerospike operations.
 /// This is equivalent to Python None but represents an Aerospike null value.
 #[pyfunction]
-#[gen_stub_pyfunction(module = "_native")]
+#[gen_stub_pyfunction]
 pub fn null(py: Python) -> Bound<PyAny> {
     py.None().into_bound(py)
 }
@@ -5111,7 +5111,7 @@ pub fn null(py: Python) -> Bound<PyAny> {
 /// must land as `BatchOperation::read_ops`, not `BatchOperation::write`,
 /// or the server rejects the per-node group.
 #[pyfunction]
-#[gen_stub_pyfunction(module = "_native")]
+#[gen_stub_pyfunction]
 pub fn has_any_write_op(py: Python<'_>, operations: Vec<Py<PyAny>>) -> PyResult<bool> {
     let owcs = extract_py_ops_with_ctx(py, &operations)?;
     let (_core_ops, has_write) = convert_ops_with_ctx_to_core(&owcs, false)?;
@@ -5128,7 +5128,7 @@ static JSON_LOADS: pyo3::sync::PyOnceLock<Py<PyAny>> = pyo3::sync::PyOnceLock::n
 /// - GeoJSON JSON string: '{"type": "Point", "coordinates": [-122.0, 37.0]}'
 /// - Coordinate pair string: "-122.0, 37.5" (longitude, latitude)
 #[pyfunction]
-#[gen_stub_pyfunction(module = "_native")]
+#[gen_stub_pyfunction]
 pub fn geojson<'a>(py: Python<'a>, geo_str: &str) -> PyResult<GeoJSON> {
     // First, try to parse as GeoJSON JSON string
     // Check if it looks like JSON (starts with '{' and contains "type")
@@ -5208,7 +5208,7 @@ static LOG_RESET_HANDLE: std::sync::OnceLock<pyo3_log::ResetHandle> = std::sync:
 /// already-cached loggers until this function is called to drop the cache.
 /// Cheap; safe to call from any thread.
 #[pyfunction]
-#[gen_stub_pyfunction(module = "_native")]
+#[gen_stub_pyfunction]
 pub fn refresh_log_levels() {
     if let Some(handle) = LOG_RESET_HANDLE.get() {
         handle.reset();

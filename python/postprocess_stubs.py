@@ -309,6 +309,10 @@ def fix_imports(content: str, pyi_file_path: str = "") -> str:
             count=1,
             flags=re.MULTILINE,
         )
+        # pyo3_stub_gen takes the name ``List`` for typing.List and never
+        # de-qualifies it, so references to the native List class keep a
+        # ``_native.`` prefix that resolves to nothing.
+        content = re.sub(r'\b_native\.List\b', 'List', content)
 
     return content
 
@@ -706,6 +710,27 @@ def ensure_exceptions_submodule(package_dir: str):
     print(f"  ✓ Regenerated exceptions submodule runtime __init__.py: {init_py_path}")
 
 
+def check_no_bare_native_refs(content: str) -> None:
+    """Fail when the stub still names a type as ``_native.X``.
+
+    No top-level ``_native`` module exists, so type checkers and editors
+    resolve such a reference to nothing, silently. pyo3_stub_gen leaves the
+    prefix on any class whose name it takes for a typing construct (``List``
+    today; ``Set``, ``Tuple``, ``Dict`` and others would do the same), so a
+    new class with such a name needs a rule in ``fix_imports``.
+    """
+    leftovers = [
+        f"  line {number}: {line.strip()[:120]}"
+        for number, line in enumerate(content.split('\n'), start=1)
+        if re.search(r'(?<![\w.])_native\.', line)
+    ]
+    if leftovers:
+        sys.exit(
+            "Stub still refers to the nonexistent top-level module `_native`:\n"
+            + '\n'.join(leftovers[:10])
+        )
+
+
 def postprocess_stubs(pyi_file_path: str):
     """Post-process the generated .pyi file to fix all stub issues."""
     print(f"Post-processing stubs: {pyi_file_path}")
@@ -730,6 +755,7 @@ def postprocess_stubs(pyi_file_path: str):
         content = fix_circular_classattr_refs(content)
         content = fix_richcmp_stubs(content)
         content = add_dunder_all(content)
+        check_no_bare_native_refs(content)
 
         # When processing native module, ensure package structure exists
         # Always create/regenerate main package __init__.pyi

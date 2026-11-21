@@ -36,8 +36,8 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
      *
      **********************************************************************************/
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
     pub struct Record {
         pub(crate) _as: aerospike_core::Record,
@@ -178,8 +178,8 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
      *
      **********************************************************************************/
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
     #[derive(Clone)]
     pub struct Key {
@@ -318,8 +318,8 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, sequence, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, sequence, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
     #[derive(Debug, Clone)]
     pub struct Blob {
@@ -531,8 +531,8 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
     ///     scores = (await client.get(key)).bins["scores"]
     ///     scores["amy"]                   # 1
     ///     scores == {"amy": 1, "zoe": 3}  # True
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(extends = PyDict, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(extends = PyDict, module = "aerospike_native._native")]
     #[derive(Debug)]
     pub struct SortedMap;
 
@@ -569,8 +569,8 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
         }
     }
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, sequence, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, sequence, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
     #[derive(Debug, Clone)]
     pub struct Map {
@@ -724,8 +724,8 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
         }
     }
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, sequence, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, sequence, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
     #[derive(Debug, Clone)]
     pub struct List {
@@ -897,8 +897,8 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
     static JSON_DUMPS: pyo3::sync::PyOnceLock<Py<PyAny>> =
         pyo3::sync::PyOnceLock::new();
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
     #[derive(Debug, Clone)]
     pub struct GeoJSON {
@@ -1001,8 +1001,8 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, sequence, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, sequence, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
     #[derive(Debug, Clone)]
     pub struct HLL {
@@ -1079,8 +1079,8 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
 
     /// Markers for Aerospike CDT map/list range and value operations.
     /// These use dedicated wire particles, distinct from Python ``float('inf')`` or the ``"*"`` string.
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, name = "SpecialValue", module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, name = "SpecialValue", module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum SpecialValue {
         /// Null particle boundary (e.g. unbounded start of a key range).

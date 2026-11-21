@@ -25,8 +25,8 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
     /// result code and are not globally unique. NONE (0) means no subcode.
     /// The catalog is append-only and server-version-specific; treat an
     /// unknown value as an opaque integer. Requires server 8.2.0+.
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(name = "SubCode", module = "_native", frozen)]
+    #[gen_stub_pyclass]
+    #[pyclass(name = "SubCode", module = "aerospike_native._native", frozen)]
     pub struct SubCode;
 
     #[gen_stub_pymethods]
@@ -213,8 +213,8 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
     /// failures.
     /// Higher levels are supersets. Requires server 8.2.0+; older servers
     /// ignore the request.
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(name = "ErrorDetailVerbosity", module = "_native", frozen)]
+    #[gen_stub_pyclass]
+    #[pyclass(name = "ErrorDetailVerbosity", module = "aerospike_native._native", frozen)]
     pub struct ErrorDetailVerbosity;
 
     #[gen_stub_pymethods]
@@ -243,8 +243,8 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
     /// ael_offset / ael_span index AEL source text (a different coordinate
     /// space, reserved for a future server branch). Requires a server build that
     /// emits the trace.
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(name = "ExpressionTrace", module = "_native", frozen, eq, from_py_object)]
+    #[gen_stub_pyclass]
+    #[pyclass(name = "ExpressionTrace", module = "aerospike_native._native", frozen, eq, from_py_object)]
     #[derive(Clone, PartialEq)]
     pub struct ExpressionTrace {
         /// Phase that failed: PHASE_BUILD or PHASE_EVAL; None when absent.
