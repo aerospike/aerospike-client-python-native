@@ -22,8 +22,8 @@ use crate::Filter;
 use crate::errors::RustClientError;
 
 /// Server query plan selection inferred from an explain response.
-#[gen_stub_pyclass_enum(module = "_native")]
-#[pyclass(from_py_object, module = "_native")]
+#[gen_stub_pyclass_enum]
+#[pyclass(from_py_object, module = "aerospike_native._native")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuerySelection {
     #[pyo3(name = "PRIMARY_INDEX")]
@@ -79,8 +79,8 @@ fn core_collection_index_type(cit: &aerospike_core::CollectionIndexType) -> Coll
 /// the server's index selection (``selection``, ``index_name``, index range, and
 /// ``index_type``). :meth:`Client.query_with_plan` replays the stored field ``44``
 /// payload on execute with the explain flag cleared.
-#[gen_stub_pyclass(module = "_native")]
-#[pyclass(from_py_object, name = "QueryPlan", module = "_native")]
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, name = "QueryPlan", module = "aerospike_native._native")]
 #[derive(Debug, Clone)]
 pub struct QueryPlan {
     pub(crate) _as: aerospike_core::QueryPlan,
@@ -242,8 +242,8 @@ impl QueryPlan {
 ///
 /// Requires Aerospike Server version >= 8.2.0. Callers must verify
 /// :meth:`Version.supports_query_selection` before use.
-#[gen_stub_pyclass(module = "_native")]
-#[pyclass(name = "QueryWhereFlags", module = "_native")]
+#[gen_stub_pyclass]
+#[pyclass(name = "QueryWhereFlags", module = "aerospike_native._native")]
 pub struct QueryWhereFlags;
 
 #[gen_stub_pymethods]

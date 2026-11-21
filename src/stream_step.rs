@@ -178,7 +178,7 @@ pub(crate) fn yield_first_step(
 /// suspending. Not part of the public API; the SDK's query streams use it to
 /// hand out a row they already hold without a coroutine per row.
 #[pyfunction]
-#[gen_stub_pyfunction(module = "_native")]
+#[gen_stub_pyfunction]
 #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
 pub(crate) fn _ready_step(py: Python<'_>, value: Py<PyAny>) -> PyResult<Py<PyAny>> {
     ready_step(py, Ok(value))
@@ -194,7 +194,7 @@ fn spent() -> PyErr {
     PyRuntimeError::new_err("cannot reuse an already awaited stream step")
 }
 
-#[pyclass(name = "_ReadyStep", module = "_native")]
+#[pyclass(name = "_ReadyStep", module = "aerospike_native._native")]
 #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 256))]
 pub(crate) struct ReadyStep {
     result: Option<PyResult<Py<PyAny>>>,
@@ -224,7 +224,7 @@ enum Phase {
     Done,
 }
 
-#[pyclass(name = "_YieldFirstStep", module = "_native")]
+#[pyclass(name = "_YieldFirstStep", module = "aerospike_native._native")]
 pub(crate) struct YieldFirstStep {
     source: Box<dyn StepSource>,
     phase: Phase,

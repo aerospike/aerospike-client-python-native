@@ -36,8 +36,8 @@ use crate::enums::ResultCode;
 /// (7 default columns) match the classic column scheme. Changing the unit on a
 /// running client discards accumulated latency samples — microsecond and
 /// millisecond values cannot share buckets.
-#[gen_stub_pyclass_enum(module = "_native")]
-#[pyclass(from_py_object, module = "_native")]
+#[gen_stub_pyclass_enum]
+#[pyclass(from_py_object, module = "aerospike_native._native")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LatencyUnit {
     #[pyo3(name = "MICROSECONDS")]
@@ -102,8 +102,8 @@ impl From<&aerospike_core::LatencyUnit> for LatencyUnit {
 /// These are the keys of the detailed metrics and per-command histograms on
 /// :class:`NodeMetricsSnapshot`. `NONE` marks commands outside every category
 /// and has no histogram of its own.
-#[gen_stub_pyclass_enum(module = "_native")]
-#[pyclass(from_py_object, module = "_native")]
+#[gen_stub_pyclass_enum]
+#[pyclass(from_py_object, module = "aerospike_native._native")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CommandType {
     #[pyo3(name = "NONE")]
@@ -209,8 +209,8 @@ impl From<&aerospike_core::CommandType> for CommandType {
 /// is the sampled fraction. Counters and gauges are always collected while
 /// metrics are enabled; only the per-command histograms and detailed metrics
 /// are sampler-gated.
-#[gen_stub_pyclass(module = "_native")]
-#[pyclass(from_py_object, module = "_native")]
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, module = "aerospike_native._native")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Sampler {
     pub(crate) _as: aerospike_core::Sampler,
@@ -290,8 +290,8 @@ impl Sampler {
 /// `MetricsPolicy.micros()` selects microsecond resolution with 24 columns.
 /// Re-enabling metrics with a changed latency unit or histogram shape discards
 /// the accumulated latency samples.
-#[gen_stub_pyclass(module = "_native")]
-#[pyclass(from_py_object, module = "_native")]
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, module = "aerospike_native._native")]
 #[derive(Debug, Clone)]
 pub struct MetricsPolicy {
     pub(crate) _as: aerospike_core::MetricsPolicy,
@@ -436,8 +436,8 @@ impl MetricsPolicy {
 /// Snapshot of one histogram: bucket counts plus min/max/sum/count of the raw
 /// values. Latency histograms are in the snapshot's latency unit; byte-size
 /// histograms are in bytes regardless of the unit.
-#[gen_stub_pyclass(module = "_native")]
-#[pyclass(module = "_native")]
+#[gen_stub_pyclass]
+#[pyclass(module = "aerospike_native._native")]
 #[derive(Debug, Clone)]
 pub struct Histogram {
     pub(crate) _as: aerospike_core::metrics::SyncHistogram,
@@ -495,8 +495,8 @@ impl Histogram {
 
 /// Detailed per-(namespace, command type) metrics: phase latency histograms
 /// plus byte-size histograms.
-#[gen_stub_pyclass(module = "_native")]
-#[pyclass(module = "_native")]
+#[gen_stub_pyclass]
+#[pyclass(module = "aerospike_native._native")]
 #[derive(Debug, Clone)]
 pub struct CommandMetric {
     pub(crate) _as: aerospike_core::metrics::CommandMetric,
@@ -547,8 +547,8 @@ impl CommandMetric {
 /// Counter values are cumulative since metrics were enabled;
 /// `connections_open` is a point-in-time gauge. Latency histogram buckets are
 /// meaningless without `latency_unit`, which is carried on the snapshot.
-#[gen_stub_pyclass(module = "_native")]
-#[pyclass(module = "_native")]
+#[gen_stub_pyclass]
+#[pyclass(module = "aerospike_native._native")]
 #[derive(Debug, Clone)]
 pub struct NodeMetricsSnapshot {
     pub(crate) _as: aerospike_core::NodeMetricsSnapshot,
@@ -771,8 +771,8 @@ impl NodeMetricsSnapshot {
 
 /// Cluster-wide metrics snapshot: per-node snapshots keyed by host address,
 /// a cluster-aggregated snapshot, and cluster-level counters.
-#[gen_stub_pyclass(module = "_native")]
-#[pyclass(module = "_native")]
+#[gen_stub_pyclass]
+#[pyclass(module = "aerospike_native._native")]
 #[derive(Debug, Clone)]
 pub struct ClusterMetrics {
     pub(crate) _as: aerospike_core::ClusterMetrics,

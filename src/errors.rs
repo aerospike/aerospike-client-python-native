@@ -32,8 +32,11 @@ create_exception!(aerospike_native.exceptions, AerospikeError, pyo3::exceptions:
 // Server-related exceptions
 // ServerError is a custom exception with a result_code property
 // Note: It extends PyException directly, but Python-side it should be treated as an AerospikeError subclass
-#[gen_stub_pyclass(module = "_native")]
-#[pyclass(extends = PyException, subclass)]
+// At runtime it reports the module callers import it from, like the
+// `create_exception!` types. Its stub stays in the extension module's file,
+// the only place the stub generator can write a class.
+#[gen_stub_pyclass(module = "aerospike_native._native")]
+#[pyclass(extends = PyException, subclass, module = "aerospike_native.exceptions")]
 pub struct ServerError {
     result_code: CoreResultCode,
     in_doubt: bool,

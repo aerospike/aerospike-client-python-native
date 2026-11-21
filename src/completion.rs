@@ -126,7 +126,7 @@ pub(crate) struct CompletionBridge {
 
 /// Python-callable invoked on the event loop thread via `call_soon_threadsafe`.
 /// Holds an Arc to its bridge's inner state so it drains the right queue.
-#[pyclass]
+#[pyclass(module = "aerospike_native._native")]
 pub(crate) struct CompletionDrainer {
     inner: Arc<CompletionInner>,
 }
@@ -145,7 +145,7 @@ impl CompletionDrainer {
 /// same `drain()` the `CompletionDrainer` would — semantics are identical, only
 /// the wake transport differs.
 #[cfg(unix)]
-#[pyclass]
+#[pyclass(module = "aerospike_native._native")]
 pub(crate) struct PipeDrainer {
     inner: Arc<CompletionInner>,
 }

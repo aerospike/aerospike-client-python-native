@@ -29,10 +29,10 @@ use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
     ////////////////////////////////////////////////////////////////////////////////////////////
 
     #[cfg(feature = "tls")]
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "TlsConfig",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 100))]

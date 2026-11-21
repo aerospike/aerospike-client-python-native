@@ -36,11 +36,11 @@ use crate::TlsConfig;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "BasePolicy",
         subclass,
-        module = "_native"
+        module = "aerospike_native._native"
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
     #[derive(Debug, Clone)]
@@ -227,10 +227,10 @@ use crate::TlsConfig;
         }
     }
 
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object,
         name = "AdminPolicy",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
@@ -266,10 +266,10 @@ use crate::TlsConfig;
         }
     }
 
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "ReadPolicy",
-        module = "_native",
+        module = "aerospike_native._native",
         extends = BasePolicy,
         subclass
     )]
@@ -284,7 +284,7 @@ use crate::TlsConfig;
     #[pymethods]
     impl ReadPolicy {
         #[new]
-        #[gen_stub(override_return_type(type_repr = "_native.ReadPolicy"))]
+        #[gen_stub(override_return_type(type_repr = "ReadPolicy"))]
         pub fn new() -> PyClassInitializer<Self> {
             // PNC opts into positional Record.results by default.
             let mut rp = aerospike_core::ReadPolicy::default();
@@ -529,10 +529,10 @@ use crate::TlsConfig;
         }
     }
 
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "WritePolicy",
-        module = "_native",
+        module = "aerospike_native._native",
         extends = BasePolicy,
         subclass,
     )]
@@ -549,7 +549,7 @@ use crate::TlsConfig;
     #[pymethods]
     impl WritePolicy {
         #[new]
-        #[gen_stub(override_return_type(type_repr = "_native.WritePolicy"))]
+        #[gen_stub(override_return_type(type_repr = "WritePolicy"))]
         pub fn new() -> PyClassInitializer<Self> {
             // PNC opts into positional Record.results by default.
             let mut wp = aerospike_core::WritePolicy::default();
@@ -942,10 +942,10 @@ use crate::TlsConfig;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "QueryPolicy",
-        module = "_native",
+        module = "aerospike_native._native",
         extends = BasePolicy,
         subclass,
     )]
@@ -960,7 +960,7 @@ use crate::TlsConfig;
     #[pymethods]
     impl QueryPolicy {
         #[new]
-        #[gen_stub(override_return_type(type_repr = "_native.QueryPolicy"))]
+        #[gen_stub(override_return_type(type_repr = "QueryPolicy"))]
         pub fn new() -> PyClassInitializer<Self> {
             // PNC opts into positional Record.results by default.
             let mut qp = aerospike_core::QueryPolicy::default();
@@ -1203,10 +1203,10 @@ use crate::TlsConfig;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "BatchRecord",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
@@ -1317,10 +1317,10 @@ use crate::TlsConfig;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "BatchPolicy",
-        module = "_native",
+        module = "aerospike_native._native",
         extends = BasePolicy,
         subclass,
     )]
@@ -1334,7 +1334,7 @@ use crate::TlsConfig;
     #[pymethods]
     impl BatchPolicy {
         #[new]
-        #[gen_stub(override_return_type(type_repr = "_native.BatchPolicy"))]
+        #[gen_stub(override_return_type(type_repr = "BatchPolicy"))]
         pub fn new() -> PyClassInitializer<Self> {
             // PNC opts into positional Record.results by default.
             let mut bp = aerospike_core::BatchPolicy::default();
@@ -1594,10 +1594,10 @@ use crate::TlsConfig;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "BatchReadPolicy",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
@@ -1658,10 +1658,10 @@ use crate::TlsConfig;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "BatchWritePolicy",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
@@ -1780,10 +1780,10 @@ use crate::TlsConfig;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "BatchDeletePolicy",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
@@ -1872,10 +1872,10 @@ use crate::TlsConfig;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "BatchUDFPolicy",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
@@ -1968,10 +1968,10 @@ use crate::TlsConfig;
     /// checking the versions of the records that took part in the transaction
     /// before it is committed. Verification is sent to the server as one batch
     /// command per node, so the exposed knobs configure that batch.
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object,
         name = "TxnVerifyPolicy",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
@@ -2056,10 +2056,10 @@ use crate::TlsConfig;
     /// records forward on commit or back on abort. Rolling is sent to the
     /// server as one batch command per node, so the exposed knobs configure
     /// that batch.
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object,
         name = "TxnRollPolicy",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
@@ -2137,10 +2137,10 @@ use crate::TlsConfig;
     ////////////////////////////////////////////////////////////////////////////////////////////
 
     /// A single read operation for use with :meth:`Client.batch`.
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "BatchReadOp",
-        module = "_native",
+        module = "aerospike_native._native",
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
     #[derive(Debug, Clone)]
@@ -2177,10 +2177,10 @@ use crate::TlsConfig;
     }
 
     /// A single write operation for use with :meth:`Client.batch`.
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "BatchWriteOp",
-        module = "_native",
+        module = "aerospike_native._native",
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
     #[derive(Debug, Clone)]
@@ -2227,10 +2227,10 @@ use crate::TlsConfig;
     }
 
     /// A single delete operation for use with :meth:`Client.batch`.
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "BatchDeleteOp",
-        module = "_native",
+        module = "aerospike_native._native",
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
     #[derive(Debug, Clone)]
@@ -2256,10 +2256,10 @@ use crate::TlsConfig;
     }
 
     /// A single UDF-apply operation for use with :meth:`Client.batch`.
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object,
         name = "BatchUDFOp",
-        module = "_native",
+        module = "aerospike_native._native",
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
     #[derive(Debug, Clone)]
@@ -2302,10 +2302,10 @@ use crate::TlsConfig;
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "ClientPolicy",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]

@@ -102,7 +102,7 @@ use crate::operations::{
      * Client
      *
      **********************************************************************************/
-    #[gen_stub_pyfunction(module = "_native")]
+    #[gen_stub_pyfunction]
     #[pyfunction]
     #[gen_stub(override_return_type(type_repr="typing.Awaitable[Client]", imports=("typing")))]
     pub fn new_client(py: Python, policy: ClientPolicy, seeds: Seeds) -> PyResult<Py<PyAny>> {
@@ -177,8 +177,8 @@ use crate::operations::{
     ///     txn = aerospike_native.Txn()
     ///     # use txn in put/get policy.txn field
     ///     status = await client.commit(txn)
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, module = "aerospike_native._native")]
     #[derive(Clone)]
     pub struct Txn {
         pub(crate) _as: Arc<aerospike_core::Txn>,
@@ -366,8 +366,8 @@ use crate::operations::{
     /// methodology stays consistent across language layers.
     ///
     /// Not thread-safe — construct one per worker thread / task.
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(module = "aerospike_native._native")]
     pub struct FastRng {
         inner: rand::rngs::SmallRng,
     }
@@ -427,8 +427,8 @@ use crate::operations::{
     /// Default users should stick with [`Client`]. Underscore-prefixed name
     /// signals private / unstable status; opt in via PSDK's
     /// `SyncClient(current_thread_runtime=True)`.
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(unsendable, module = "_native", name = "_LocalClient")]
+    #[gen_stub_pyclass]
+    #[pyclass(unsendable, module = "aerospike_native._native", name = "_LocalClient")]
     pub struct LocalClient {
         rt: tokio::runtime::Runtime,
         client: Arc<aerospike_core::Client>,
@@ -721,8 +721,8 @@ use crate::operations::{
         }
     }
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass)]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
     #[derive(Clone)]
     pub struct Client {
@@ -836,10 +836,10 @@ use crate::operations::{
     /// (`Client.batch_stream_blocking`) has no bridge and rejects
     /// `__anext__` with a clear error: use sync iteration on those, or
     /// recreate the stream via `batch_stream` in an async context.
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(
         name = "BatchRecordStream",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     pub struct BatchRecordStream {
@@ -1323,7 +1323,7 @@ use crate::operations::{
         }
 
         /// Closes the connection to the Aerospike cluster.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         pub fn close<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
             let client = self._as.clone();
 
@@ -2800,7 +2800,7 @@ use crate::operations::{
         /// mode at op time and picks AP vs SC. The `txn` override is applied
         /// after the mode pick on a cloned policy so caller-cached policies
         /// stay untouched across concurrent ops.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (key, bins, *, policy=None, policy_sc=None, txn=None))]
         pub fn put<'a>(
             &self,
@@ -2843,7 +2843,7 @@ use crate::operations::{
         /// When `policy_sc` is provided, PNC resolves the namespace mode at
         /// op time and picks AP vs SC. `filter_expression` / `txn` are
         /// applied after the mode pick on a cloned policy.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[Record]", imports=("typing")))]
         #[pyo3(signature = (
             key,
             bins=None,
@@ -3270,7 +3270,7 @@ use crate::operations::{
         /// Add integer bin values to existing record bin values. The policy specifies the transaction
         /// timeout, record expiration and how the transaction is handled when the record already
         /// exists. This call only works for integer values.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (key, bins, *, policy=None))]
         pub fn add<'a>(
             &self,
@@ -3301,7 +3301,7 @@ use crate::operations::{
         /// Append bin string values to existing record bin values. The policy specifies the
         /// transaction timeout, record expiration and how the transaction is handled when the record
         /// already exists. This call only works for string values.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (key, bins, *, policy=None))]
         pub fn append<'a>(
             &self,
@@ -3332,7 +3332,7 @@ use crate::operations::{
         /// Prepend bin string values to existing record bin values. The policy specifies the
         /// transaction timeout, record expiration and how the transaction is handled when the record
         /// already exists. This call only works for string values.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (key, bins, *, policy=None))]
         pub fn prepend<'a>(
             &self,
@@ -3362,7 +3362,7 @@ use crate::operations::{
 
         /// Delete record for specified key. The policy specifies the transaction timeout.
         /// The call returns `true` if the record existed on the server before deletion.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[bool]", imports=("typing")))]
         #[pyo3(signature = (key, *, policy=None))]
         pub fn delete<'a>(
             &self,
@@ -3386,7 +3386,7 @@ use crate::operations::{
 
         /// Reset record's time to expiration using the policy's expiration. Fail if the record does
         /// not exist.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (key, *, policy=None))]
         pub fn touch<'a>(
             &self,
@@ -3409,7 +3409,7 @@ use crate::operations::{
         }
 
         /// Read multiple records for specified keys in one batch call.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.List[BatchRecord]]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[builtins.list[BatchRecord]]", imports=("typing", "builtins")))]
         #[pyo3(signature = (keys, bins=None, *, batch_policy=None, read_policy=None))]
         pub fn batch_read<'a>(
             &self,
@@ -3448,7 +3448,7 @@ use crate::operations::{
         }
 
         /// Write multiple records for specified keys in one batch call.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.List[BatchRecord]]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[builtins.list[BatchRecord]]", imports=("typing", "builtins")))]
         #[pyo3(signature = (keys, bins_list, *, batch_policy=None, write_policy=None))]
         pub fn batch_write<'a>(
             &self,
@@ -3497,7 +3497,7 @@ use crate::operations::{
         }
 
         /// Perform read/write operations on multiple keys in one batch call.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.List[BatchRecord]]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[builtins.list[BatchRecord]]", imports=("typing", "builtins")))]
         #[pyo3(signature = (keys, operations_list, *, batch_policy=None, write_policy=None))]
         pub fn batch_operate<'a>(
             &self,
@@ -3549,7 +3549,7 @@ use crate::operations::{
         }
 
         /// Delete multiple records for specified keys in one batch call.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.List[BatchRecord]]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[builtins.list[BatchRecord]]", imports=("typing", "builtins")))]
         #[pyo3(signature = (keys, *, batch_policy=None, delete_policy=None))]
         pub fn batch_delete<'a>(
             &self,
@@ -3586,7 +3586,7 @@ use crate::operations::{
         }
 
         /// Check if multiple record keys exist in one batch call.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.List[builtins.bool]]", imports=("typing", "builtins")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[builtins.list[builtins.bool]]", imports=("typing", "builtins")))]
         #[pyo3(signature = (keys, *, batch_policy=None, read_policy=None))]
         pub fn batch_exists<'a>(
             &self,
@@ -3624,7 +3624,7 @@ use crate::operations::{
         }
 
         /// Read multiple record headers (metadata only, no bin data) for specified keys in one batch call.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.List[typing.Optional[Record]]]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[builtins.list[typing.Optional[Record]]]", imports=("typing", "builtins")))]
         #[pyo3(signature = (keys, *, batch_policy=None, read_policy=None))]
         pub fn batch_get_header<'a>(
             &self,
@@ -3666,7 +3666,7 @@ use crate::operations::{
         }
 
         /// Apply UDF operations on multiple keys in one batch call.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.List[BatchRecord]]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[builtins.list[BatchRecord]]", imports=("typing", "builtins")))]
         #[pyo3(signature = (keys, udf_name, function_name, args, *, batch_policy=None, udf_policy=None))]
         pub fn batch_apply<'a>(
             &self,
@@ -3725,7 +3725,7 @@ use crate::operations::{
         ///
         /// Returns:
         ///     A list of :class:`BatchRecord` results in the same order as the input ops.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Sequence[BatchRecord]]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[builtins.list[BatchRecord]]", imports=("typing", "builtins")))]
         #[pyo3(signature = (ops, *, batch_policy=None))]
         pub fn batch<'a>(
             &self,
@@ -4122,7 +4122,7 @@ use crate::operations::{
         }
 
         /// Determine if a record key exists. The policy can be used to specify timeouts.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[bool]", imports=("typing")))]
         #[pyo3(signature = (key, *, policy=None))]
         pub fn exists<'a>(
             &self,
@@ -4180,7 +4180,7 @@ use crate::operations::{
         }
 
         /// Removes all records in the specified namespace/set efficiently.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (namespace, set_name, before_nanos = None, *, policy = None))]
         pub fn truncate<'a>(
             &self,
@@ -4347,7 +4347,7 @@ use crate::operations::{
         /// Execute a query on all server nodes and return a record iterator. The query executor puts
         /// records on a queue in separate threads. The calling thread concurrently pops records off
         /// the queue through the record iterator.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[Recordset]", imports=("typing")))]
         #[pyo3(signature = (statement, partition_filter, *, policy=None))]
         pub fn query<'a>(
             &self,
@@ -4478,7 +4478,7 @@ use crate::operations::{
 
         /// Creates a new user with password and roles. Clear-text password will be hashed using bcrypt
         /// before sending to server.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (user, password, roles, *, policy = None))]
         pub fn create_user<'a>(
             &self,
@@ -4504,7 +4504,7 @@ use crate::operations::{
 
         /// Creates a PKI user with roles. PKI users authenticate via TLS client certificate (no password).
         /// Supported by Aerospike Server v8.1+ Enterprise.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (user, roles, *, policy = None))]
         pub fn create_pki_user<'a>(
             &self,
@@ -4528,7 +4528,7 @@ use crate::operations::{
         }
 
         /// Removes a user from the cluster.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (user, *, policy = None))]
         pub fn drop_user<'a>(&self, user: String, policy: Option<AdminPolicy>, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
             let client = self._as.clone();
@@ -4545,7 +4545,7 @@ use crate::operations::{
         }
 
         /// Changes a user's password. Clear-text password will be hashed using bcrypt before sending to server.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (user, password, *, policy = None))]
         pub fn change_password<'a>(
             &self,
@@ -4568,7 +4568,7 @@ use crate::operations::{
         }
 
         /// Adds roles to user's list of roles.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (user, roles, *, policy = None))]
         pub fn grant_roles<'a>(
             &self,
@@ -4592,7 +4592,7 @@ use crate::operations::{
         }
 
         /// Removes roles from user's list of roles.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (user, roles, *, policy = None))]
         pub fn revoke_roles<'a>(
             &self,
@@ -4617,7 +4617,7 @@ use crate::operations::{
 
         /// Retrieves users and their roles.
         /// If None is passed for the user argument, all users will be returned.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[builtins.list[User]]", imports=("typing", "builtins")))]
         #[pyo3(signature = (user = None, *, policy = None))]
         pub fn query_users<'a>(
             &self,
@@ -4642,7 +4642,7 @@ use crate::operations::{
 
         /// Retrieves roles and their privileges.
         /// If None is passed for the role argument, all roles will be returned.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[builtins.list[Role]]", imports=("typing", "builtins")))]
         #[pyo3(signature = (role = None, *, policy = None))]
         pub fn query_roles<'a>(
             &self,
@@ -4668,7 +4668,7 @@ use crate::operations::{
         /// Creates a user-defined role.
         /// Quotas require server security configuration "enable-quotas" to be set to true.
         /// Pass 0 for quota values for no limit.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (role_name, privileges, allowlist, read_quota, write_quota, *, policy = None))]
         pub fn create_role<'a>(
             &self,
@@ -4697,7 +4697,7 @@ use crate::operations::{
         }
 
         /// Removes a user-defined role.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (role_name, *, policy = None))]
         pub fn drop_role<'a>(
             &self,
@@ -4719,7 +4719,7 @@ use crate::operations::{
         }
 
         /// Grants privileges to a user-defined role.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (role_name, privileges, *, policy = None))]
         pub fn grant_privileges<'a>(
             &self,
@@ -4744,7 +4744,7 @@ use crate::operations::{
         }
 
         /// Revokes privileges from a user-defined role.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (role_name, privileges, *, policy = None))]
         pub fn revoke_privileges<'a>(
             &self,
@@ -4770,7 +4770,7 @@ use crate::operations::{
 
         /// Sets IP address allowlist for a role.
         /// If allowlist is nil or empty, it removes existing allowlist from role.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (role_name, allowlist, *, policy = None))]
         pub fn set_allowlist<'a>(
             &self,
@@ -4797,7 +4797,7 @@ use crate::operations::{
         /// If a quota is zero, the limit is removed.
         /// Quotas require server security configuration "enable-quotas" to be set to true.
         /// Pass 0 for quota values for no limit.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (role_name, read_quota, write_quota, *, policy = None))]
         pub fn set_quotas<'a>(
             &self,
@@ -4970,7 +4970,7 @@ use crate::operations::{
         ///
         /// Returns:
         ///     A dictionary containing the info command response as key-value pairs.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Dict[str, str]]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[builtins.dict[builtins.str, builtins.str]]", imports=("typing", "builtins")))]
         pub fn info<'a>(&self, command: String, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
             let client = self._as.clone();
 
@@ -4997,7 +4997,7 @@ use crate::operations::{
         ///
         /// Returns:
         ///     A dictionary mapping node names to their info command responses.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Dict[str, typing.Dict[str, str]]]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[builtins.dict[builtins.str, builtins.dict[builtins.str, builtins.str]]]", imports=("typing", "builtins")))]
         pub fn info_on_all_nodes<'a>(&self, command: String, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
             let client = self._as.clone();
 
@@ -5062,7 +5062,7 @@ use crate::operations::{
         }
 
         /// Sets XDR filter for given datacenter and namespace. Pass None as filter to remove.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Any]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[None]", imports=("typing")))]
         #[pyo3(signature = (datacenter, namespace, filter_expression = None, *, policy = None))]
         pub fn set_xdr_filter<'a>(
             &self,
@@ -5095,7 +5095,7 @@ use crate::operations::{
 /// Return a null value for use in Aerospike operations.
 /// This is equivalent to Python None but represents an Aerospike null value.
 #[pyfunction]
-#[gen_stub_pyfunction(module = "_native")]
+#[gen_stub_pyfunction]
 pub fn null(py: Python) -> Bound<PyAny> {
     py.None().into_bound(py)
 }
@@ -5111,7 +5111,7 @@ pub fn null(py: Python) -> Bound<PyAny> {
 /// must land as `BatchOperation::read_ops`, not `BatchOperation::write`,
 /// or the server rejects the per-node group.
 #[pyfunction]
-#[gen_stub_pyfunction(module = "_native")]
+#[gen_stub_pyfunction]
 pub fn has_any_write_op(py: Python<'_>, operations: Vec<Py<PyAny>>) -> PyResult<bool> {
     let owcs = extract_py_ops_with_ctx(py, &operations)?;
     let (_core_ops, has_write) = convert_ops_with_ctx_to_core(&owcs, false)?;
@@ -5128,7 +5128,7 @@ static JSON_LOADS: pyo3::sync::PyOnceLock<Py<PyAny>> = pyo3::sync::PyOnceLock::n
 /// - GeoJSON JSON string: '{"type": "Point", "coordinates": [-122.0, 37.0]}'
 /// - Coordinate pair string: "-122.0, 37.5" (longitude, latitude)
 #[pyfunction]
-#[gen_stub_pyfunction(module = "_native")]
+#[gen_stub_pyfunction]
 pub fn geojson<'a>(py: Python<'a>, geo_str: &str) -> PyResult<GeoJSON> {
     // First, try to parse as GeoJSON JSON string
     // Check if it looks like JSON (starts with '{' and contains "type")
@@ -5208,7 +5208,7 @@ static LOG_RESET_HANDLE: std::sync::OnceLock<pyo3_log::ResetHandle> = std::sync:
 /// already-cached loggers until this function is called to drop the cache.
 /// Cheap; safe to call from any thread.
 #[pyfunction]
-#[gen_stub_pyfunction(module = "_native")]
+#[gen_stub_pyfunction]
 pub fn refresh_log_levels() {
     if let Some(handle) = LOG_RESET_HANDLE.get() {
         handle.reset();
@@ -5296,8 +5296,6 @@ fn _native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ErrorDetailVerbosity>()?;
     m.add_class::<ExpressionTrace>()?;
 
-    m.add_class::<List>()?;
-    m.add_class::<Map>()?;
     m.add_class::<SortedMap>()?;
     m.add_class::<Blob>()?;
     m.add_class::<GeoJSON>()?;

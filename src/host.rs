@@ -35,8 +35,8 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
     ///
     ///     seeds = [Host("10.0.0.1", 3000), Host("fd00::2", 3000)]
     ///     client = await new_client(ClientPolicy(), seeds)
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, module = "_native", frozen, eq, hash)]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, module = "aerospike_native._native", frozen, eq, hash)]
     #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Host {
         pub(crate) _as: aerospike_core::Host,

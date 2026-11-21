@@ -22,7 +22,6 @@ from aerospike_native import (
     WritePolicy,
     ReadPolicy,
     Key,
-    List,
     Blob,
     GeoJSON,
 )
@@ -123,15 +122,15 @@ class TestGetBinsStandardTypes:
         assert "bin" not in bins  # Nil bin is not returned
 
 
-class TestGetBinsWrapperTypes:
+class TestGetBinsValueTypes:
     """Test get_bins() returns native Python types."""
 
-    async def test_get_bins_list_wrapper(self, client_and_key):
-        """Test get_bins() returns Python native list (not wrapper class)."""
+    async def test_get_bins_list(self, client_and_key):
+        """Test get_bins() returns a list bin as a Python list."""
         client, rp, key = client_and_key
 
         wp = WritePolicy()
-        await client.put(key, {"bin": List([1, 2, 3])}, policy=wp)
+        await client.put(key, {"bin": [1, 2, 3]}, policy=wp)
 
         rec = await client.get(key, policy=rp)
         bins = rec.bins
@@ -145,7 +144,7 @@ class TestGetBinsWrapperTypes:
         client, rp, key = client_and_key
 
         wp = WritePolicy()
-        await client.put(key, {"bin": List([1, [2, 3], 4])}, policy=wp)
+        await client.put(key, {"bin": [1, [2, 3], 4]}, policy=wp)
 
         rec = await client.get(key, policy=rp)
         bins = rec.bins
@@ -154,22 +153,20 @@ class TestGetBinsWrapperTypes:
         assert isinstance(bins["bin"], list)
         assert bins["bin"][0] == 1
         assert bins["bin"][2] == 4
-        # Nested list is also converted to Python native list
         assert isinstance(bins["bin"][1], list)
         assert bins["bin"][1] == [2, 3]
 
-    async def test_get_bins_map_wrapper(self, client_and_key):
-        """Test get_bins() with Python dict (returns as dict, not Map wrapper)."""
+    async def test_get_bins_dict(self, client_and_key):
+        """Test get_bins() returns a map bin as a Python dict."""
         client, rp, key = client_and_key
 
         wp = WritePolicy()
-        # Python dict input -> Python dict output (not wrapped in Map)
+        # Python dict input -> Python dict output
         await client.put(key, {"bin": {"a": 1, "b": 2}}, policy=wp)
 
         rec = await client.get(key, policy=rp)
         bins = rec.bins
 
-        # Current behavior: Python dict is returned as Python dict (not wrapped)
         assert isinstance(bins["bin"], dict)
         assert bins["bin"] == {"a": 1, "b": 2}
 
@@ -178,13 +175,12 @@ class TestGetBinsWrapperTypes:
         client, rp, key = client_and_key
 
         wp = WritePolicy()
-        # Python dict input -> Python dict output (not wrapped)
+        # Python dict input -> Python dict output
         await client.put(key, {"bin": {"a": 1, "nested": {"b": 2}}}, policy=wp)
 
         rec = await client.get(key, policy=rp)
         bins = rec.bins
 
-        # Current behavior: Python dict is returned as Python dict (not wrapped)
         assert isinstance(bins["bin"], dict)
         assert bins["bin"]["a"] == 1
         assert isinstance(bins["bin"]["nested"], dict)
@@ -239,8 +235,7 @@ class TestGetBinsComplexNested:
         client, rp, key = client_and_key
 
         wp = WritePolicy()
-        # Map needs to be created from Python dict, and nested Map is automatically created
-        await client.put(key, {"bin": List([1, {"a": 2}, 3])}, policy=wp)
+        await client.put(key, {"bin": [1, {"a": 2}, 3]}, policy=wp)
 
         rec = await client.get(key, policy=rp)
         bins = rec.bins
@@ -249,7 +244,6 @@ class TestGetBinsComplexNested:
         assert isinstance(bins["bin"], list)
         assert bins["bin"][0] == 1
         assert bins["bin"][2] == 3
-        # Nested dict is returned as Python dict (not wrapped in Map)
         assert isinstance(bins["bin"][1], dict)
         assert bins["bin"][1] == {"a": 2}
 
@@ -258,7 +252,6 @@ class TestGetBinsComplexNested:
         client, rp, key = client_and_key
 
         wp = WritePolicy()
-        # Map can be created from Python dict, nested List is automatically created
         await client.put(key, {"bin": {"items": [1, 2, 3], "count": 3}}, policy=wp)
 
         rec = await client.get(key, policy=rp)
@@ -266,7 +259,6 @@ class TestGetBinsComplexNested:
 
         assert isinstance(bins["bin"], dict)
         assert bins["bin"]["count"] == 3
-        # Nested list is converted to Python native list
         assert isinstance(bins["bin"]["items"], list)
         assert bins["bin"]["items"] == [1, 2, 3]
 
@@ -275,7 +267,6 @@ class TestGetBinsComplexNested:
         client, rp, key = client_and_key
 
         wp = WritePolicy()
-        # Use Python dict/list - nested structures are automatically wrapped
         await client.put(
             key,
             {
@@ -295,7 +286,6 @@ class TestGetBinsComplexNested:
         level1 = bins["bin"]["level1"]
         assert isinstance(level1, dict)
         level2 = level1["level2"]
-        # List is converted to Python native list
         assert isinstance(level2, list)
         level3 = level2[1]
         assert isinstance(level3, dict)
@@ -317,8 +307,8 @@ class TestGetBinsMultipleBins:
                 "int": 42,
                 "float": 3.14,
                 "bool": True,
-                "list": List([1, 2, 3]),
-                "map": {"a": 1},  # Map can be created from Python dict
+                "list": [1, 2, 3],
+                "map": {"a": 1},
                 "geo": GeoJSON('{"type": "Point", "coordinates": [-122.0, 37.5]}'),
                 "blob": Blob(b"data"),
             },
@@ -332,7 +322,6 @@ class TestGetBinsMultipleBins:
         assert isinstance(bins["int"], int)
         assert isinstance(bins["float"], float)
         assert isinstance(bins["bool"], bool)
-        # List and blob return native Python types
         assert isinstance(bins["list"], list)
         assert isinstance(bins["map"], dict)  # Python dict input -> Python dict output
         assert isinstance(bins["geo"], GeoJSON)  # GeoJSON still returns wrapper (not changed)
@@ -343,7 +332,7 @@ class TestGetBinsMultipleBins:
         assert bins["float"] == 3.14
         assert bins["bool"] is True
         assert bins["list"] == [1, 2, 3]  # Direct list access
-        assert bins["map"] == {"a": 1}  # Python dict, not wrapped
+        assert bins["map"] == {"a": 1}
         assert bins["geo"].value == '{"type": "Point", "coordinates": [-122.0, 37.5]}'
         assert bins["blob"] == b"data"  # Direct bytes access
 
@@ -364,12 +353,12 @@ class TestBinMethod:
         assert isinstance(value, str)
         assert value == "hello"
 
-    async def test_bin_list_wrapper(self, client_and_key):
-        """Test bin() returns Python native list (not wrapper class)."""
+    async def test_bin_list(self, client_and_key):
+        """Test bin() returns a list bin as a Python list."""
         client, rp, key = client_and_key
 
         wp = WritePolicy()
-        await client.put(key, {"bin": List([1, 2, 3])}, policy=wp)
+        await client.put(key, {"bin": [1, 2, 3]}, policy=wp)
 
         rec = await client.get(key, policy=rp)
         value = rec.bin("bin")

@@ -117,7 +117,7 @@ where
 /// the ``_blocking`` method variants — calling an async method on a client
 /// built this way raises ``RuntimeError`` because the completion bridge
 /// (which captures an asyncio loop at construction time) is not initialized.
-#[gen_stub_pyfunction(module = "_native")]
+#[gen_stub_pyfunction]
 #[pyfunction]
 pub(crate) fn new_client_blocking(
     py: Python<'_>,

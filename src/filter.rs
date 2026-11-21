@@ -46,8 +46,8 @@ use crate::stream_step::{
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(name = "PartitionStatus", module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(name = "PartitionStatus", module = "aerospike_native._native")]
     #[derive(Debug)]
     pub struct PartitionStatus {
         pub(crate) _as: aerospike_core::query::PartitionStatus,
@@ -196,10 +196,10 @@ use crate::stream_step::{
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "PartitionFilter",
-        module = "_native",
+        module = "aerospike_native._native",
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
     #[derive(Debug, Clone)]
@@ -371,10 +371,10 @@ use crate::stream_step::{
     ////////////////////////////////////////////////////////////////////////////////////////////
 
     /// Query statement parameters.
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "Statement",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
@@ -483,10 +483,10 @@ use crate::stream_step::{
     ///
     /// Use instance methods `context` and `expression` to attach a CDT path or expression-based index
     /// to a filter (for example `Filter.equal("bin", 1).context([CTX.list_index(0)])`).
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "Filter",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
@@ -797,10 +797,10 @@ use crate::stream_step::{
     /// multiple threads will retrieve records from the server nodes and put these records on an
     /// internal queue managed by the recordset. The single user thread consumes these records from the
     /// queue.
-    #[gen_stub_pyclass(module = "_native")]
+    #[gen_stub_pyclass]
     #[pyclass(from_py_object, 
         name = "Recordset",
-        module = "_native",
+        module = "aerospike_native._native",
         subclass,
     )]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
@@ -1098,7 +1098,7 @@ use crate::stream_step::{
         ///
         /// A query error raises. Records that arrived before the failure
         /// are returned first, and the next call raises.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.List[Record]]", imports=("typing", "aerospike_native")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[builtins.list[Record]]", imports=("typing", "aerospike_native", "builtins")))]
         #[pyo3(name = "_next_batch")]
         fn next_batch(&mut self, py: Python<'_>, max_records: usize) -> PyResult<Py<PyAny>> {
             if max_records == 0 {

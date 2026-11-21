@@ -36,8 +36,8 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
      *
      **********************************************************************************/
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
     pub struct Record {
         pub(crate) _as: aerospike_core::Record,
@@ -178,8 +178,8 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
      *
      **********************************************************************************/
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1000))]
     #[derive(Clone)]
     pub struct Key {
@@ -318,8 +318,8 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, sequence, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, sequence, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
     #[derive(Debug, Clone)]
     pub struct Blob {
@@ -502,7 +502,7 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
 
     ////////////////////////////////////////////////////////////////////////////////////////////
     //
-    //  Map
+    //  SortedMap
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -531,8 +531,8 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
     ///     scores = (await client.get(key)).bins["scores"]
     ///     scores["amy"]                   # 1
     ///     scores == {"amy": 1, "zoe": 3}  # True
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(extends = PyDict, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(extends = PyDict, module = "aerospike_native._native")]
     #[derive(Debug)]
     pub struct SortedMap;
 
@@ -569,322 +569,6 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
         }
     }
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, sequence, module = "_native")]
-    #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
-    #[derive(Debug, Clone)]
-    pub struct Map {
-        v: HashMap<PythonValue, PythonValue>,
-    }
-
-    #[gen_stub_pymethods]
-    #[pymethods]
-    impl Map {
-        #[new]
-        pub fn new(v: HashMap<PythonValue, PythonValue>) -> Self {
-            Map { v }
-        }
-
-        #[getter]
-        pub fn get_value(&self) -> HashMap<PythonValue, PythonValue> {
-            self.v.clone()
-        }
-
-        #[setter]
-        pub fn set_value(&mut self, b: HashMap<PythonValue, PythonValue>) {
-            self.v = b
-        }
-
-        /// Returns a string representation of the value.
-        pub fn as_string(&self) -> String {
-            PythonValue::HashMap(self.v.clone()).as_string()
-        }
-
-        // TODO: Change HashMap into BTreeMap and use that
-        // This requires Rust Client implementation first
-        // fn __hash__(&self) -> u64 {
-        //     let mut s = DefaultHasher::new();
-        //     self.v.hash(&mut s);
-        //     s.finish()
-        // }
-
-        fn __richcmp__<'a>(&self, other: &Bound<'a, PyAny>, op: CompareOp) -> bool {
-            match op {
-                CompareOp::Eq => {
-                    let l: Result<Map, _> = other.extract();
-                    if let Ok(l) = l {
-                        return self.v == l.v;
-                    }
-
-                    let l: PyResult<HashMap<PythonValue, PythonValue>> = other.extract();
-                    if let Ok(l) = l {
-                        return self.v == l;
-                    }
-
-                    false
-                }
-                CompareOp::Ne => {
-                    let l: Result<Map, _> = other.extract();
-                    if let Ok(l) = l {
-                        return self.v != l.v;
-                    }
-
-                    let l: PyResult<HashMap<PythonValue, PythonValue>> = other.extract();
-                    if let Ok(l) = l {
-                        return self.v != l;
-                    }
-
-                    true
-                }
-                _ => false,
-            }
-        }
-
-        fn __str__(&self) -> PyResult<String> {
-            // Convert HashMap to JSON-like string format
-            let mut items = Vec::new();
-            for (k, v) in &self.v {
-                let key_str = match k {
-                    PythonValue::String(s) => format!("\"{}\"", s),
-                    _ => format!("{:?}", k),
-                };
-                let val_str = match v {
-                    PythonValue::String(s) => format!("\"{}\"", s),
-                    PythonValue::Int(i) => i.to_string(),
-                    PythonValue::Bool(b) => b.to_string(),
-                    PythonValue::Float(f) => f.to_string(),
-                    PythonValue::Nil => "None".to_string(),
-                    _ => format!("{:?}", v),
-                };
-                items.push(format!("{}: {}", key_str, val_str));
-            }
-            Ok(format!("{{{}}}", items.join(", ")))
-        }
-
-        fn __repr__(&self) -> PyResult<String> {
-            let s = self.__str__()?;
-            Ok(format!("Map({})", s))
-        }
-    }
-
-    impl fmt::Display for Map {
-        fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), fmt::Error> {
-            write!(f, "{}", self.as_string())
-        }
-    }
-
-    // impl From<HashMap> for PythonValue {
-    //     fn from(input: HashMap) -> Self {
-    //         PythonValue::HashMap(input.v.clone())
-    //     }
-    // }
-
-    // impl Into<PythonValue> for HashMap {
-    //     fn into(self) -> PythonValue {
-    //         PythonValue::HashMap(self.v)
-    //     }
-    // }
-
-    ////////////////////////////////////////////////////////////////////////////////////////////
-    //
-    //  List
-    //
-    ////////////////////////////////////////////////////////////////////////////////////////////
-
-    fn format_python_value(value: &PythonValue) -> String {
-        match value {
-            PythonValue::String(s) => format!("\"{}\"", s),
-            PythonValue::Int(i) => i.to_string(),
-            PythonValue::Bool(b) => if *b { "True".to_string() } else { "False".to_string() },
-            PythonValue::Float(f) => f.to_string(),
-            PythonValue::Nil => "None".to_string(),
-            PythonValue::List(l) => {
-                let mut items = Vec::new();
-                for item in l {
-                    items.push(format_python_value(item));
-                }
-                format!("[{}]", items.join(", "))
-            },
-            PythonValue::HashMap(h) => {
-                let mut items = Vec::new();
-                let mut sorted_entries: Vec<_> = h.iter().collect();
-                sorted_entries.sort_by_key(|(k, _)| format_python_value(k));
-                for (k, v) in sorted_entries {
-                    items.push(format!("{}: {}", format_python_value(k), format_python_value(v)));
-                }
-                format!("{{{}}}", items.join(", "))
-            },
-            PythonValue::OrderedMap(pairs) => {
-                let items: Vec<_> = pairs.iter()
-                    .map(|(k, v)| format!("{}: {}", format_python_value(k), format_python_value(v)))
-                    .collect();
-                format!("{{{}}}", items.join(", "))
-            },
-            _ => format!("{:?}", value),
-        }
-    }
-
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, sequence, module = "_native")]
-    #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
-    #[derive(Debug, Clone)]
-    pub struct List {
-        v: Vec<PythonValue>,
-        index: usize,
-    }
-
-    #[gen_stub_pymethods]
-    #[pymethods]
-    impl List {
-        #[new]
-        pub fn new(v: Vec<PythonValue>) -> Self {
-            List { v, index: 0 }
-        }
-
-        #[getter]
-        pub fn get_value(&self) -> Vec<PythonValue> {
-            self.v.clone()
-        }
-
-        #[setter]
-        pub fn set_value(&mut self, geo: Vec<PythonValue>) {
-            self.v = geo
-        }
-
-        /// Returns a string representation of the value.
-        pub fn as_string(&self) -> String {
-            PythonValue::List(self.v.clone()).as_string()
-        }
-
-        fn __str__(&self) -> PyResult<String> {
-            // Convert internal representation to Python list format
-            let mut items = Vec::new();
-            for item in &self.v {
-                let item_str = format_python_value(item);
-                items.push(item_str);
-            }
-            Ok(format!("[{}]", items.join(", ")))
-        }
-
-        fn __repr__(&self) -> PyResult<String> {
-            let s = self.__str__()?;
-            Ok(format!("List({})", s))
-        }
-
-        fn __getitem__(&mut self, idx: usize) -> PyResult<PythonValue> {
-            if idx >= self.v.len() {
-                return Err(PyIndexError::new_err("index out of bounds"));
-            }
-            Ok(self.v[idx].clone())
-        }
-
-        fn __setitem__(&mut self, idx: usize, v: PythonValue) -> PyResult<()> {
-            if idx >= self.v.len() {
-                return Err(PyIndexError::new_err("index out of bounds"));
-            }
-            self.v[idx] = v;
-            Ok(())
-        }
-
-        fn __delitem__(&mut self, idx: usize) -> PyResult<()> {
-            if idx >= self.v.len() {
-                return Err(PyIndexError::new_err("index out of bounds"))
-            }
-            self.v.remove(idx);
-            Ok(())
-        }
-
-        fn __concat__(&self, mut other: List) -> PyResult<List> {
-            let mut new_list = self.v.clone();
-            new_list.append(&mut other.v);
-            Ok(List { v: new_list, index: 0 })
-        }
-
-        fn __inplace_concat__(&mut self, mut other: List) -> PyResult<List> {
-            self.v.append(&mut other.v);
-            Ok(self.clone())
-        }
-
-        fn __repeat__(&self, times: usize) -> PyResult<List> {
-            let og = self.v.clone();
-            let len = self.v.len();
-            let new_list: Vec<_> = og.into_iter().cycle().take(len * times).collect();
-            Ok(List { v: new_list, index: 0 })
-        }
-
-        fn __inplace_repeat__(&mut self, times: usize) -> PyResult<List> {
-            self.__repeat__(times)
-        }
-        fn __hash__(&self) -> u64 {
-            let mut s = DefaultHasher::new();
-            self.v.hash(&mut s);
-            s.finish()
-        }
-
-        fn __len__(&self) -> usize {
-            self.v.len()
-        }
-        fn __richcmp__<'a>(&self, other: &Bound<'a, PyAny>, op: CompareOp) -> bool {
-            match op {
-                CompareOp::Eq => {
-                    let l: Result<List, _> = other.extract();
-                    if let Ok(l) = l {
-                        return self.v == l.v;
-                    }
-
-                    let l: PyResult<Vec<PythonValue>> = other.extract();
-                    if let Ok(l) = l {
-                        return self.v == l;
-                    }
-
-                    false
-                }
-                CompareOp::Ne => {
-                    let l: Result<List, _> = other.extract();
-                    if let Ok(l) = l {
-                        return self.v != l.v;
-                    }
-
-                    let l: PyResult<Vec<PythonValue>> = other.extract();
-                    if let Ok(l) = l {
-                        return self.v != l;
-                    }
-
-                    true
-                }
-                _ => false,
-            }
-        }
-
-        fn __iter__(&self) -> Self {
-            self.clone()
-        }
-
-        fn __next__<'a>(&mut self, py: Python<'a>) -> Option<Py<PyAny>> {
-            let res = self.v.get(self.index);
-            self.index += 1;
-            res.map(|v| v.clone().into_pyobject(py).unwrap().unbind())
-        }
-    }
-
-    impl fmt::Display for List {
-        fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), fmt::Error> {
-            write!(f, "{}", self.as_string())
-        }
-    }
-
-    // impl From<List> for PythonValue {
-    //     fn from(input: List) -> Self {
-    //         PythonValue::List(input.v.clone())
-    //     }
-    // }
-
-    // impl Into<PythonValue> for List {
-    //     fn into(self) -> PythonValue {
-    //         PythonValue::List(self.v)
-    //     }
-    // }
-
     ////////////////////////////////////////////////////////////////////////////////////////////
     //
     //  GeoJSON
@@ -897,8 +581,8 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
     static JSON_DUMPS: pyo3::sync::PyOnceLock<Py<PyAny>> =
         pyo3::sync::PyOnceLock::new();
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
     #[derive(Debug, Clone)]
     pub struct GeoJSON {
@@ -1001,8 +685,8 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
     //
     ////////////////////////////////////////////////////////////////////////////////////////////
 
-    #[gen_stub_pyclass(module = "_native")]
-    #[pyclass(from_py_object, subclass, sequence, module = "_native")]
+    #[gen_stub_pyclass]
+    #[pyclass(from_py_object, subclass, sequence, module = "aerospike_native._native")]
     #[cfg_attr(not(Py_GIL_DISABLED), pyo3(freelist = 1))]
     #[derive(Debug, Clone)]
     pub struct HLL {
@@ -1079,8 +763,8 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
 
     /// Markers for Aerospike CDT map/list range and value operations.
     /// These use dedicated wire particles, distinct from Python ``float('inf')`` or the ``"*"`` string.
-    #[gen_stub_pyclass_enum(module = "_native")]
-    #[pyclass(from_py_object, name = "SpecialValue", module = "_native")]
+    #[gen_stub_pyclass_enum]
+    #[pyclass(from_py_object, name = "SpecialValue", module = "aerospike_native._native")]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum SpecialValue {
         /// Null particle boundary (e.g. unbounded start of a key range).
@@ -1345,11 +1029,6 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
             let l: PyResult<Vec<PythonValue>> = obj.extract();
             if let Ok(l) = l {
                 return Ok(PythonValue::List(l));
-            }
-
-            let l: Result<List, _> = obj.extract();
-            if let Ok(l) = l {
-                return Ok(PythonValue::List(l.v));
             }
 
             // Before the plain-dict arm: a SortedMap must not degrade to an
