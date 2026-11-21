@@ -443,6 +443,33 @@ def fix_richcmp_stubs(content: str) -> str:
     return fixed
 
 
+SEQUENCE_SLOT_METHODS = {
+    '__concat__': '__add__',
+    '__inplace_concat__': '__iadd__',
+    '__repeat__': '__mul__',
+    '__inplace_repeat__': '__imul__',
+}
+
+
+def fix_sequence_slot_stubs(content: str) -> str:
+    """Rename pyo3's sequence slots to the operator methods Python sees.
+
+    ``__concat__`` and ``__repeat__`` (and their in-place forms) are the pyo3
+    names for the slots behind ``+`` and ``*``. Stub generation emits them
+    verbatim, but at runtime the class has ``__add__`` / ``__mul__``, so a
+    stub naming the slots tells type checkers the operators do not exist.
+    """
+    fixed, n = re.subn(
+        r'^( {4}def )(__(?:inplace_)?(?:concat|repeat)__)\(',
+        lambda m: f'{m.group(1)}{SEQUENCE_SLOT_METHODS[m.group(2)]}(',
+        content,
+        flags=re.MULTILINE,
+    )
+    if n:
+        print(f"  ✓ Renamed {n} sequence slot stub(s) to operator methods")
+    return fixed
+
+
 def ensure_exports(content: str) -> str:
     """Ensure all classes are properly imported from _native in __init__.pyi.
 
@@ -754,6 +781,7 @@ def postprocess_stubs(pyi_file_path: str):
         content = fix_map_write_flags_int_enum(content)
         content = fix_circular_classattr_refs(content)
         content = fix_richcmp_stubs(content)
+        content = fix_sequence_slot_stubs(content)
         content = add_dunder_all(content)
         check_no_bare_native_refs(content)
 

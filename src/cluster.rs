@@ -247,7 +247,7 @@ use crate::policies::AdminPolicy;
         }
 
         /// Execute an info command on this node.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.Dict[str, str]]", imports=("typing")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[builtins.dict[builtins.str, builtins.str]]", imports=("typing", "builtins")))]
         #[pyo3(signature = (command, *, policy = None))]
         pub fn info<'a>(
             &self,

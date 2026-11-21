@@ -704,7 +704,7 @@ class CTX:
     Context for nested CDT (Complex Data Type) operations.
     Used to specify the location of nested lists/maps within a record.
     """
-    def __eq__(self, other: CTX) -> builtins.bool:
+    def __eq__(self, other: builtins.object) -> builtins.bool:
         r"""
         Compare two CTX objects for equality.
         """
@@ -1036,7 +1036,7 @@ class Client:
             ``None``: namespace not in the partition map (unknown
             namespace, or partition map not yet populated for this cluster).
         """
-    def close(self) -> typing.Awaitable[typing.Any]:
+    def close(self) -> typing.Awaitable[None]:
         r"""
         Closes the connection to the Aerospike cluster.
         """
@@ -1327,7 +1327,7 @@ class Client:
         `(idx, BatchRecord)` tuple. Cluster-level errors raise here;
         per-key errors land on each `BatchRecord`'s `result_code`.
         """
-    def put(self, key: Key, bins: dict, *, policy: typing.Optional[WritePolicy] = None, policy_sc: typing.Optional[WritePolicy] = None, txn: typing.Optional[Txn] = None) -> typing.Awaitable[typing.Any]:
+    def put(self, key: Key, bins: dict, *, policy: typing.Optional[WritePolicy] = None, policy_sc: typing.Optional[WritePolicy] = None, txn: typing.Optional[Txn] = None) -> typing.Awaitable[None]:
         r"""
         Write record bin(s).
 
@@ -1336,7 +1336,7 @@ class Client:
         after the mode pick on a cloned policy so caller-cached policies
         stay untouched across concurrent ops.
         """
-    def get(self, key: Key, bins: typing.Optional[typing.Sequence[builtins.str]] = None, *, policy: typing.Optional[ReadPolicy] = None, policy_sc: typing.Optional[ReadPolicy] = None, filter_expression: typing.Optional[FilterExpression] = None, txn: typing.Optional[Txn] = None) -> typing.Awaitable[typing.Any]:
+    def get(self, key: Key, bins: typing.Optional[typing.Sequence[builtins.str]] = None, *, policy: typing.Optional[ReadPolicy] = None, policy_sc: typing.Optional[ReadPolicy] = None, filter_expression: typing.Optional[FilterExpression] = None, txn: typing.Optional[Txn] = None) -> typing.Awaitable[Record]:
         r"""
         Read record for the specified key.
 
@@ -1418,63 +1418,63 @@ class Client:
         op time and picks AP vs SC. The full override set is applied
         after the mode pick on a cloned policy.
         """
-    def add(self, key: Key, bins: typing.Mapping[builtins.str, typing.Any], *, policy: typing.Optional[WritePolicy] = None) -> typing.Awaitable[typing.Any]:
+    def add(self, key: Key, bins: typing.Mapping[builtins.str, typing.Any], *, policy: typing.Optional[WritePolicy] = None) -> typing.Awaitable[None]:
         r"""
         Add integer bin values to existing record bin values. The policy specifies the transaction
         timeout, record expiration and how the transaction is handled when the record already
         exists. This call only works for integer values.
         """
-    def append(self, key: Key, bins: typing.Mapping[builtins.str, typing.Any], *, policy: typing.Optional[WritePolicy] = None) -> typing.Awaitable[typing.Any]:
+    def append(self, key: Key, bins: typing.Mapping[builtins.str, typing.Any], *, policy: typing.Optional[WritePolicy] = None) -> typing.Awaitable[None]:
         r"""
         Append bin string values to existing record bin values. The policy specifies the
         transaction timeout, record expiration and how the transaction is handled when the record
         already exists. This call only works for string values.
         """
-    def prepend(self, key: Key, bins: typing.Mapping[builtins.str, typing.Any], *, policy: typing.Optional[WritePolicy] = None) -> typing.Awaitable[typing.Any]:
+    def prepend(self, key: Key, bins: typing.Mapping[builtins.str, typing.Any], *, policy: typing.Optional[WritePolicy] = None) -> typing.Awaitable[None]:
         r"""
         Prepend bin string values to existing record bin values. The policy specifies the
         transaction timeout, record expiration and how the transaction is handled when the record
         already exists. This call only works for string values.
         """
-    def delete(self, key: Key, *, policy: typing.Optional[WritePolicy] = None) -> typing.Awaitable[typing.Any]:
+    def delete(self, key: Key, *, policy: typing.Optional[WritePolicy] = None) -> typing.Awaitable[bool]:
         r"""
         Delete record for specified key. The policy specifies the transaction timeout.
         The call returns `true` if the record existed on the server before deletion.
         """
-    def touch(self, key: Key, *, policy: typing.Optional[WritePolicy] = None) -> typing.Awaitable[typing.Any]:
+    def touch(self, key: Key, *, policy: typing.Optional[WritePolicy] = None) -> typing.Awaitable[None]:
         r"""
         Reset record's time to expiration using the policy's expiration. Fail if the record does
         not exist.
         """
-    def batch_read(self, keys: typing.Sequence[Key], bins: typing.Optional[typing.Sequence[builtins.str]] = None, *, batch_policy: typing.Optional[BatchPolicy] = None, read_policy: typing.Optional[BatchReadPolicy] = None) -> typing.Awaitable[typing.List[BatchRecord]]:
+    def batch_read(self, keys: typing.Sequence[Key], bins: typing.Optional[typing.Sequence[builtins.str]] = None, *, batch_policy: typing.Optional[BatchPolicy] = None, read_policy: typing.Optional[BatchReadPolicy] = None) -> typing.Awaitable[builtins.list[BatchRecord]]:
         r"""
         Read multiple records for specified keys in one batch call.
         """
-    def batch_write(self, keys: typing.Sequence[Key], bins_list: typing.Sequence[typing.Any], *, batch_policy: typing.Optional[BatchPolicy] = None, write_policy: typing.Optional[BatchWritePolicy] = None) -> typing.Awaitable[typing.List[BatchRecord]]:
+    def batch_write(self, keys: typing.Sequence[Key], bins_list: typing.Sequence[typing.Any], *, batch_policy: typing.Optional[BatchPolicy] = None, write_policy: typing.Optional[BatchWritePolicy] = None) -> typing.Awaitable[builtins.list[BatchRecord]]:
         r"""
         Write multiple records for specified keys in one batch call.
         """
-    def batch_operate(self, keys: typing.Sequence[Key], operations_list: typing.Sequence[typing.Sequence[typing.Any]], *, batch_policy: typing.Optional[BatchPolicy] = None, write_policy: typing.Optional[BatchWritePolicy] = None) -> typing.Awaitable[typing.List[BatchRecord]]:
+    def batch_operate(self, keys: typing.Sequence[Key], operations_list: typing.Sequence[typing.Sequence[typing.Any]], *, batch_policy: typing.Optional[BatchPolicy] = None, write_policy: typing.Optional[BatchWritePolicy] = None) -> typing.Awaitable[builtins.list[BatchRecord]]:
         r"""
         Perform read/write operations on multiple keys in one batch call.
         """
-    def batch_delete(self, keys: typing.Sequence[Key], *, batch_policy: typing.Optional[BatchPolicy] = None, delete_policy: typing.Optional[BatchDeletePolicy] = None) -> typing.Awaitable[typing.List[BatchRecord]]:
+    def batch_delete(self, keys: typing.Sequence[Key], *, batch_policy: typing.Optional[BatchPolicy] = None, delete_policy: typing.Optional[BatchDeletePolicy] = None) -> typing.Awaitable[builtins.list[BatchRecord]]:
         r"""
         Delete multiple records for specified keys in one batch call.
         """
-    def batch_exists(self, keys: typing.Sequence[Key], *, batch_policy: typing.Optional[BatchPolicy] = None, read_policy: typing.Optional[BatchReadPolicy] = None) -> typing.Awaitable[typing.List[builtins.bool]]:
+    def batch_exists(self, keys: typing.Sequence[Key], *, batch_policy: typing.Optional[BatchPolicy] = None, read_policy: typing.Optional[BatchReadPolicy] = None) -> typing.Awaitable[builtins.list[builtins.bool]]:
         r"""
         Check if multiple record keys exist in one batch call.
         """
-    def batch_get_header(self, keys: typing.Sequence[Key], *, batch_policy: typing.Optional[BatchPolicy] = None, read_policy: typing.Optional[BatchReadPolicy] = None) -> typing.Awaitable[typing.List[typing.Optional[Record]]]:
+    def batch_get_header(self, keys: typing.Sequence[Key], *, batch_policy: typing.Optional[BatchPolicy] = None, read_policy: typing.Optional[BatchReadPolicy] = None) -> typing.Awaitable[builtins.list[typing.Optional[Record]]]:
         r"""
         Read multiple record headers (metadata only, no bin data) for specified keys in one batch call.
         """
-    def batch_apply(self, keys: typing.Sequence[Key], udf_name: builtins.str, function_name: builtins.str, args: typing.Optional[typing.Sequence[typing.Any]], *, batch_policy: typing.Optional[BatchPolicy] = None, udf_policy: typing.Optional[BatchUDFPolicy] = None) -> typing.Awaitable[typing.List[BatchRecord]]:
+    def batch_apply(self, keys: typing.Sequence[Key], udf_name: builtins.str, function_name: builtins.str, args: typing.Optional[typing.Sequence[typing.Any]], *, batch_policy: typing.Optional[BatchPolicy] = None, udf_policy: typing.Optional[BatchUDFPolicy] = None) -> typing.Awaitable[builtins.list[BatchRecord]]:
         r"""
         Apply UDF operations on multiple keys in one batch call.
         """
-    def batch(self, ops: typing.Sequence[typing.Any], *, batch_policy: typing.Optional[BatchPolicy] = None) -> typing.Awaitable[typing.Sequence[BatchRecord]]:
+    def batch(self, ops: typing.Sequence[typing.Any], *, batch_policy: typing.Optional[BatchPolicy] = None) -> typing.Awaitable[builtins.list[BatchRecord]]:
         r"""
         Execute a mixed batch of read, write, and delete operations in a single server call.
 
@@ -1586,7 +1586,7 @@ class Client:
         Returns:
             UdfRemoveTask that can be used to wait for removal completion.
         """
-    def exists(self, key: Key, *, policy: typing.Optional[ReadPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def exists(self, key: Key, *, policy: typing.Optional[ReadPolicy] = None) -> typing.Awaitable[bool]:
         r"""
         Determine if a record key exists. The policy can be used to specify timeouts.
         """
@@ -1594,7 +1594,7 @@ class Client:
         r"""
         Determine if a record key exists. Returns (key, meta) where meta=None if record not found.
         """
-    def truncate(self, namespace: builtins.str, set_name: builtins.str, before_nanos: typing.Optional[builtins.int] = None, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def truncate(self, namespace: builtins.str, set_name: builtins.str, before_nanos: typing.Optional[builtins.int] = None, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[None]:
         r"""
         Removes all records in the specified namespace/set efficiently.
         """
@@ -1620,7 +1620,7 @@ class Client:
         r"""
         Create a secondary index using an expression. Returns an IndexTask to wait for completion.
         """
-    def query(self, statement: Statement, partition_filter: PartitionFilter, *, policy: typing.Optional[QueryPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def query(self, statement: Statement, partition_filter: PartitionFilter, *, policy: typing.Optional[QueryPolicy] = None) -> typing.Awaitable[Recordset]:
         r"""
         Execute a query on all server nodes and return a record iterator. The query executor puts
         records on a queue in separate threads. The calling thread concurrently pops records off
@@ -1667,66 +1667,66 @@ class Client:
                 or if ``statement`` already has filters.
             FilteredOut: If ``plan.selection`` is ``FILTERED_OUT``.
         """
-    def create_user(self, user: builtins.str, password: builtins.str, roles: typing.Sequence[builtins.str], *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def create_user(self, user: builtins.str, password: builtins.str, roles: typing.Sequence[builtins.str], *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[None]:
         r"""
         Creates a new user with password and roles. Clear-text password will be hashed using bcrypt
         before sending to server.
         """
-    def create_pki_user(self, user: builtins.str, roles: typing.Sequence[builtins.str], *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def create_pki_user(self, user: builtins.str, roles: typing.Sequence[builtins.str], *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[None]:
         r"""
         Creates a PKI user with roles. PKI users authenticate via TLS client certificate (no password).
         Supported by Aerospike Server v8.1+ Enterprise.
         """
-    def drop_user(self, user: builtins.str, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def drop_user(self, user: builtins.str, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[None]:
         r"""
         Removes a user from the cluster.
         """
-    def change_password(self, user: builtins.str, password: builtins.str, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def change_password(self, user: builtins.str, password: builtins.str, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[None]:
         r"""
         Changes a user's password. Clear-text password will be hashed using bcrypt before sending to server.
         """
-    def grant_roles(self, user: builtins.str, roles: typing.Sequence[builtins.str], *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def grant_roles(self, user: builtins.str, roles: typing.Sequence[builtins.str], *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[None]:
         r"""
         Adds roles to user's list of roles.
         """
-    def revoke_roles(self, user: builtins.str, roles: typing.Sequence[builtins.str], *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def revoke_roles(self, user: builtins.str, roles: typing.Sequence[builtins.str], *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[None]:
         r"""
         Removes roles from user's list of roles.
         """
-    def query_users(self, user: typing.Optional[builtins.str] = None, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def query_users(self, user: typing.Optional[builtins.str] = None, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[builtins.list[User]]:
         r"""
         Retrieves users and their roles.
         If None is passed for the user argument, all users will be returned.
         """
-    def query_roles(self, role: typing.Optional[builtins.str] = None, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def query_roles(self, role: typing.Optional[builtins.str] = None, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[builtins.list[Role]]:
         r"""
         Retrieves roles and their privileges.
         If None is passed for the role argument, all roles will be returned.
         """
-    def create_role(self, role_name: builtins.str, privileges: typing.Sequence[Privilege], allowlist: typing.Sequence[builtins.str], read_quota: builtins.int, write_quota: builtins.int, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def create_role(self, role_name: builtins.str, privileges: typing.Sequence[Privilege], allowlist: typing.Sequence[builtins.str], read_quota: builtins.int, write_quota: builtins.int, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[None]:
         r"""
         Creates a user-defined role.
         Quotas require server security configuration "enable-quotas" to be set to true.
         Pass 0 for quota values for no limit.
         """
-    def drop_role(self, role_name: builtins.str, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def drop_role(self, role_name: builtins.str, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[None]:
         r"""
         Removes a user-defined role.
         """
-    def grant_privileges(self, role_name: builtins.str, privileges: typing.Sequence[Privilege], *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def grant_privileges(self, role_name: builtins.str, privileges: typing.Sequence[Privilege], *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[None]:
         r"""
         Grants privileges to a user-defined role.
         """
-    def revoke_privileges(self, role_name: builtins.str, privileges: typing.Sequence[Privilege], *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def revoke_privileges(self, role_name: builtins.str, privileges: typing.Sequence[Privilege], *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[None]:
         r"""
         Revokes privileges from a user-defined role.
         """
-    def set_allowlist(self, role_name: builtins.str, allowlist: typing.Sequence[builtins.str], *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def set_allowlist(self, role_name: builtins.str, allowlist: typing.Sequence[builtins.str], *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[None]:
         r"""
         Sets IP address allowlist for a role.
         If allowlist is nil or empty, it removes existing allowlist from role.
         """
-    def set_quotas(self, role_name: builtins.str, read_quota: builtins.int, write_quota: builtins.int, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def set_quotas(self, role_name: builtins.str, read_quota: builtins.int, write_quota: builtins.int, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[None]:
         r"""
         Sets maximum reads/writes per second limits for a role.
         If a quota is zero, the limit is removed.
@@ -1811,7 +1811,7 @@ class Client:
             status = await client.abort(txn)
             assert status == AbortStatus.OK
         """
-    def info(self, command: builtins.str) -> typing.Awaitable[typing.Dict[str, str]]:
+    def info(self, command: builtins.str) -> typing.Awaitable[builtins.dict[builtins.str, builtins.str]]:
         r"""
         Execute an info command on a random cluster node.
 
@@ -1821,7 +1821,7 @@ class Client:
         Returns:
             A dictionary containing the info command response as key-value pairs.
         """
-    def info_on_all_nodes(self, command: builtins.str) -> typing.Awaitable[typing.Dict[str, typing.Dict[str, str]]]:
+    def info_on_all_nodes(self, command: builtins.str) -> typing.Awaitable[builtins.dict[builtins.str, builtins.dict[builtins.str, builtins.str]]]:
         r"""
         Execute an info command on all cluster nodes.
 
@@ -1854,7 +1854,7 @@ class Client:
         enabled (gauges are point-in-time); drains and aggregates per-node
         state, so poll at an export interval rather than per operation.
         """
-    def set_xdr_filter(self, datacenter: builtins.str, namespace: builtins.str, filter_expression: typing.Optional[FilterExpression] = None, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[typing.Any]:
+    def set_xdr_filter(self, datacenter: builtins.str, namespace: builtins.str, filter_expression: typing.Optional[FilterExpression] = None, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[None]:
         r"""
         Sets XDR filter for given datacenter and namespace. Pass None as filter to remove.
         """
@@ -4421,10 +4421,10 @@ class List:
     def __getitem__(self, idx: builtins.int) -> typing.Any: ...
     def __setitem__(self, idx: builtins.int, v: typing.Any) -> None: ...
     def __delitem__(self, idx: builtins.int) -> None: ...
-    def __concat__(self, other: List) -> List: ...
-    def __inplace_concat__(self, other: List) -> List: ...
-    def __repeat__(self, times: builtins.int) -> List: ...
-    def __inplace_repeat__(self, times: builtins.int) -> List: ...
+    def __add__(self, other: List) -> List: ...
+    def __iadd__(self, other: List) -> List: ...
+    def __mul__(self, times: builtins.int) -> List: ...
+    def __imul__(self, times: builtins.int) -> List: ...
     def __hash__(self) -> builtins.int: ...
     def __len__(self) -> builtins.int: ...
     def __eq__(self, other: object) -> builtins.bool: ...
@@ -5178,7 +5178,7 @@ class Node:
         Reads the client's alias list (no network I/O), so it is a plain
         method callable from both async and sync code.
         """
-    def info(self, command: builtins.str, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[typing.Dict[str, str]]:
+    def info(self, command: builtins.str, *, policy: typing.Optional[AdminPolicy] = None) -> typing.Awaitable[builtins.dict[builtins.str, builtins.str]]:
         r"""
         Execute an info command on this node.
         """
@@ -5786,7 +5786,7 @@ class Recordset:
     def partition_filter_sync(self) -> typing.Optional[PartitionFilter]: ...
     def __aiter__(self) -> Recordset: ...
     def __anext__(self) -> typing.Any: ...
-    def _next_batch(self, max_records: builtins.int) -> typing.Awaitable[typing.List[Record]]:
+    def _next_batch(self, max_records: builtins.int) -> typing.Awaitable[builtins.list[Record]]:
         r"""
         Internal: take the records that have already arrived, up to
         ``max_records`` and never more than 64. Not part of the public

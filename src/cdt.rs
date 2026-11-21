@@ -742,7 +742,12 @@ use crate::record::PythonValue;
     #[pymethods]
     impl CTX {
         /// Compare two CTX objects for equality.
-        fn __eq__(&self, other: &CTX) -> bool {
+        fn __eq__(
+            &self,
+            // Any other object compares unequal, so the stub takes `object`.
+            #[gen_stub(override_type(type_repr = "builtins.object", imports = ("builtins")))]
+            other: &CTX,
+        ) -> bool {
             self.ctx == other.ctx
         }
 

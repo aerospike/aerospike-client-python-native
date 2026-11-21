@@ -1098,7 +1098,7 @@ use crate::stream_step::{
         ///
         /// A query error raises. Records that arrived before the failure
         /// are returned first, and the next call raises.
-        #[gen_stub(override_return_type(type_repr="typing.Awaitable[typing.List[Record]]", imports=("typing", "aerospike_native")))]
+        #[gen_stub(override_return_type(type_repr="typing.Awaitable[builtins.list[Record]]", imports=("typing", "aerospike_native", "builtins")))]
         #[pyo3(name = "_next_batch")]
         fn next_batch(&mut self, py: Python<'_>, max_records: usize) -> PyResult<Py<PyAny>> {
             if max_records == 0 {
