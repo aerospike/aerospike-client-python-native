@@ -158,6 +158,17 @@ __all__ = [
     "null",
     "refresh_log_levels",
 ]
+class _HostLike(typing.Protocol):
+    r"""
+    Any object with a host's name and port, such as the host class of a
+    layer above. The seed candidate providers accept it in place of
+    :class:`Host`, and also read a ``tls_name`` attribute when it has one.
+    """
+    @property
+    def name(self) -> builtins.str: ...
+    @property
+    def port(self) -> builtins.int: ...
+
 class AdminPolicy:
     @property
     def timeout(self) -> builtins.int: ...
@@ -6665,7 +6676,7 @@ class SeedCandidateProvider:
         client = await new_client(policy, [])
     """
     def __new__(cls, *_args: typing.Any, **_kwargs: typing.Any) -> _native.SeedCandidateProvider: ...
-    def refresh_seed_candidates(self, ctx: _native.SeedCandidateContext) -> builtins.list[_native.Host]:
+    def refresh_seed_candidates(self, ctx: _native.SeedCandidateContext) -> typing.Sequence[Host | _HostLike]:
         r"""
         Returns the current seed hosts.
 
@@ -6673,7 +6684,8 @@ class SeedCandidateProvider:
             ctx: The call's context.
 
         Returns:
-            The seed hosts, a list of :class:`Host`; possibly empty.
+            The seed hosts, a list of :class:`Host` or of objects with
+            ``name``, ``port`` and an optional ``tls_name``; possibly empty.
 
         Raises:
             Exception: Any exception reports a failure. At construction it is
@@ -6965,12 +6977,13 @@ class StaticSeedCandidateProvider:
         The seed hosts the provider returns.
         """
     def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
-    def __new__(cls, hosts: typing.Sequence[_native.Host]) -> _native.StaticSeedCandidateProvider:
+    def __new__(cls, hosts: typing.Sequence[_native.Host  |  _HostLike]) -> _native.StaticSeedCandidateProvider:
         r"""
         Create a provider over *hosts*.
 
         Args:
-            hosts: The seed hosts the provider returns.
+            hosts: The seed hosts the provider returns: :class:`Host`, or any
+                object with ``name``, ``port`` and an optional ``tls_name``.
 
         Returns:
             StaticSeedCandidateProvider

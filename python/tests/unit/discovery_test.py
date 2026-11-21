@@ -62,6 +62,23 @@ class RegistryProvider(SeedCandidateProvider):
         raise RuntimeError(f"{self.registry_url} is unavailable")
 
 
+class SeedAddress:
+    """A caller's own host class, with the attribute names of Host."""
+
+    def __init__(self, name, port, tls_name=None):
+        self.name = name
+        self.port = port
+        self.tls_name = tls_name
+
+
+class NamePort:
+    """A host-shaped object without a tls_name attribute."""
+
+    def __init__(self, name, port):
+        self.name = name
+        self.port = port
+
+
 class TestClientPolicy:
     """Discovery settings on ClientPolicy."""
 
@@ -142,6 +159,40 @@ class TestClientPolicy:
             policy.seed_candidate_provider = PassThroughAddressTranslator()
         with pytest.raises(TypeError, match="address_translator must be"):
             policy.address_translator = {"10.0.0.1": "203.0.113.1"}
+
+
+class TestStaticSeedCandidateProvider:
+    """The static provider takes Host or any object shaped like one."""
+
+    def test_host_shaped_objects_become_hosts(self):
+        provider = StaticSeedCandidateProvider(
+            [SeedAddress("10.0.0.1", 3000), SeedAddress("fd00::2", 4333, tls_name="prod"), NamePort("10.0.0.3", 3000)]
+        )
+        assert provider.hosts == [
+            Host("10.0.0.1", 3000),
+            Host("fd00::2", 4333, tls_name="prod"),
+            Host("10.0.0.3", 3000),
+        ]
+
+    def test_object_without_a_port_is_rejected(self):
+        class NameOnly:
+            name = "10.0.0.1"
+
+        with pytest.raises(TypeError, match="expected a Host or an object with name and port, got NameOnly"):
+            StaticSeedCandidateProvider([NameOnly()])
+
+    @pytest.mark.parametrize(
+        ("host", "error", "message"),
+        [
+            (SeedAddress("", 3000), ValueError, "Host name must not be empty"),
+            (SeedAddress("[fd00::2]", 3000), ValueError, "is bracketed"),
+            (SeedAddress("10.0.0.1", 70000), OverflowError, None),
+        ],
+        ids=["empty-name", "bracketed-name", "port-out-of-range"],
+    )
+    def test_host_shaped_values_are_checked_like_host(self, host, error, message):
+        with pytest.raises(error, match=message):
+            StaticSeedCandidateProvider([host])
 
 
 class TestDnsSeedCandidateProvider:
@@ -356,6 +407,16 @@ class TestClientConstruction:
         policy = ClientPolicy()
         policy.seed_candidate_provider = BareAddress()
         with pytest.raises(ClientError, match="refresh_seed_candidates returned str, not a list of Host"):
+            new_client_blocking(policy, [])
+
+    def test_refresh_returning_an_invalid_host_names_it(self):
+        class NameOnly(SeedCandidateProvider):
+            def refresh_seed_candidates(self, ctx):
+                return [SeedAddress("10.0.0.1", 3000), NamePort("", 3000)]
+
+        policy = ClientPolicy()
+        policy.seed_candidate_provider = NameOnly()
+        with pytest.raises(ClientError, match="returned an invalid host: ValueError: Host name must not be empty"):
             new_client_blocking(policy, [])
 
     @pytest.mark.parametrize(

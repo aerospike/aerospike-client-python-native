@@ -50,7 +50,7 @@ use pyo3::types::{PyDateTime, PyTzInfo};
 use crate::errors::RustClientError;
 #[cfg(feature = "discovery-aws")]
 use crate::AwsAddressField;
-use crate::{DnsRecordType, Host};
+use crate::{DnsRecordType, Host, HostArg};
 
 /// A rejected setting is Python's `ValueError`, as for any constructor: it
 /// never reached a server, so there is no result code to carry.
@@ -94,13 +94,14 @@ impl StaticSeedCandidateProvider {
     /// Create a provider over *hosts*.
     ///
     /// Args:
-    ///     hosts: The seed hosts the provider returns.
+    ///     hosts: The seed hosts the provider returns: :class:`Host`, or any
+    ///         object with ``name``, ``port`` and an optional ``tls_name``.
     ///
     /// Returns:
     ///     StaticSeedCandidateProvider
     #[new]
-    pub fn new(hosts: Vec<Host>) -> Self {
-        let hosts: Vec<aerospike_core::Host> = hosts.into_iter().map(|host| host._as).collect();
+    pub fn new(hosts: Vec<HostArg>) -> Self {
+        let hosts: Vec<aerospike_core::Host> = hosts.into_iter().map(|host| host.0).collect();
         StaticSeedCandidateProvider {
             _as: Arc::new(CoreStaticProvider::new(hosts)),
         }
@@ -724,7 +725,8 @@ impl PySeedCandidateProvider {
     ///     ctx: The call's context.
     ///
     /// Returns:
-    ///     The seed hosts, a list of :class:`Host`; possibly empty.
+    ///     The seed hosts, a list of :class:`Host` or of objects with
+    ///     ``name``, ``port`` and an optional ``tls_name``; possibly empty.
     ///
     /// Raises:
     ///     Exception: Any exception reports a failure. At construction it is
@@ -732,6 +734,7 @@ impl PySeedCandidateProvider {
     ///         constructor fails with ``ResultCode.SEED_DISCOVERY_FAILED``.
     ///         On a periodic refresh it is logged and the previous seeds
     ///         kept.
+    #[gen_stub(override_return_type(type_repr = "typing.Sequence[Host | _HostLike]", imports = ("typing")))]
     pub fn refresh_seed_candidates(&self, ctx: &SeedCandidateContext) -> PyResult<Vec<Host>> {
         let _ = ctx;
         Err(PyNotImplementedError::new_err(
@@ -954,14 +957,18 @@ impl Shared {
                 .bind(py)
                 .call_method1(intern!(py, "refresh_seed_candidates"), (ctx,))
                 .map_err(|e| e.to_string())?;
-            let hosts: Vec<Host> = result.extract().map_err(|_| {
+            let items: Vec<Bound<'_, PyAny>> = result.extract().map_err(|_| {
                 let type_name = result.get_type().qualname().map(|n| n.to_string());
                 format!(
                     "refresh_seed_candidates returned {}, not a list of Host",
                     type_name.unwrap_or_default()
                 )
             })?;
-            Ok(hosts.into_iter().map(|host| host._as).collect())
+            items
+                .iter()
+                .map(|item| item.extract::<HostArg>().map(|host| host.0))
+                .collect::<PyResult<Vec<_>>>()
+                .map_err(|e| format!("refresh_seed_candidates returned an invalid host: {e}"))
         })
     }
 

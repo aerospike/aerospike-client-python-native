@@ -133,6 +133,22 @@ class TestPythonSeedCandidateProvider:
         assert ctx.configured_seeds == [Host("127.0.0.1", 1)]
         assert len(provider.closes) == 1
 
+    async def test_provider_may_return_host_shaped_objects(self):
+        class SeedAddress:
+            def __init__(self, name, port):
+                self.name = name
+                self.port = port
+
+        seed = _seed()
+        provider = RecordingProvider(seed=SeedAddress(seed.name, seed.port))
+        cp = _policy()
+        cp.seed_candidate_provider = provider
+        client = await new_client(cp, [])
+        try:
+            assert client.is_connected()
+        finally:
+            await client.close()
+
     async def test_periodic_provider_is_refreshed_until_close(self):
         provider = RecordingProvider(periodic=True)
         client = await new_client(_periodic_policy(provider), [])
