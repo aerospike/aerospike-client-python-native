@@ -153,7 +153,6 @@ class TestGetBinsValueTypes:
         assert isinstance(bins["bin"], list)
         assert bins["bin"][0] == 1
         assert bins["bin"][2] == 4
-        # A nested list is a Python list too
         assert isinstance(bins["bin"][1], list)
         assert bins["bin"][1] == [2, 3]
 
@@ -168,7 +167,6 @@ class TestGetBinsValueTypes:
         rec = await client.get(key, policy=rp)
         bins = rec.bins
 
-        # A map bin comes back as a Python dict
         assert isinstance(bins["bin"], dict)
         assert bins["bin"] == {"a": 1, "b": 2}
 
@@ -183,7 +181,6 @@ class TestGetBinsValueTypes:
         rec = await client.get(key, policy=rp)
         bins = rec.bins
 
-        # A map bin comes back as a Python dict
         assert isinstance(bins["bin"], dict)
         assert bins["bin"]["a"] == 1
         assert isinstance(bins["bin"]["nested"], dict)
@@ -247,7 +244,6 @@ class TestGetBinsComplexNested:
         assert isinstance(bins["bin"], list)
         assert bins["bin"][0] == 1
         assert bins["bin"][2] == 3
-        # A nested dict is a Python dict too
         assert isinstance(bins["bin"][1], dict)
         assert bins["bin"][1] == {"a": 2}
 
@@ -263,7 +259,6 @@ class TestGetBinsComplexNested:
 
         assert isinstance(bins["bin"], dict)
         assert bins["bin"]["count"] == 3
-        # A nested list is a Python list too
         assert isinstance(bins["bin"]["items"], list)
         assert bins["bin"]["items"] == [1, 2, 3]
 
@@ -272,7 +267,6 @@ class TestGetBinsComplexNested:
         client, rp, key = client_and_key
 
         wp = WritePolicy()
-        # Plain dicts and lists, nested
         await client.put(
             key,
             {
@@ -292,7 +286,6 @@ class TestGetBinsComplexNested:
         level1 = bins["bin"]["level1"]
         assert isinstance(level1, dict)
         level2 = level1["level2"]
-        # A list comes back as a Python list
         assert isinstance(level2, list)
         level3 = level2[1]
         assert isinstance(level3, dict)
@@ -329,7 +322,6 @@ class TestGetBinsMultipleBins:
         assert isinstance(bins["int"], int)
         assert isinstance(bins["float"], float)
         assert isinstance(bins["bool"], bool)
-        # A list and a blob come back as list and bytes
         assert isinstance(bins["list"], list)
         assert isinstance(bins["map"], dict)  # Python dict input -> Python dict output
         assert isinstance(bins["geo"], GeoJSON)  # GeoJSON still returns wrapper (not changed)
