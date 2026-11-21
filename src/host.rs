@@ -15,6 +15,7 @@
 
 use aerospike_core::ToHosts;
 use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use pyo3_stub_gen::{PyStubType, TypeInfo};
@@ -120,6 +121,45 @@ use pyo3_stub_gen::{PyStubType, TypeInfo};
         match &host.tls_name {
             Some(tls_name) => format!("{open}{}{close}:{tls_name}:{}", host.name, host.port),
             None => format!("{open}{}{close}:{}", host.name, host.port),
+        }
+    }
+
+    /// A seed host given to a seed candidate provider: a :class:`Host`, or any
+    /// object with ``name`` and ``port`` attributes and an optional
+    /// ``tls_name``, so a layer above can pass its own host class.
+    pub struct HostArg(pub(crate) aerospike_core::Host);
+
+    impl<'a, 'py> FromPyObject<'a, 'py> for HostArg {
+        type Error = PyErr;
+
+        fn extract(obj: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
+            if let Ok(host) = obj.extract::<Host>() {
+                return Ok(HostArg(host._as));
+            }
+            let py = obj.py();
+            let attr = |name| {
+                obj.getattr(name).map_err(|_| {
+                    let type_name = obj.get_type().name().map(|n| n.to_string());
+                    PyTypeError::new_err(format!(
+                        "expected a Host or an object with name and port, got {}",
+                        type_name.unwrap_or_default()
+                    ))
+                })
+            };
+            let name: String = attr(intern!(py, "name"))?.extract()?;
+            let port: u16 = attr(intern!(py, "port"))?.extract()?;
+            let tls_name: Option<String> = match obj.getattr_opt(intern!(py, "tls_name"))? {
+                Some(value) => value.extract()?,
+                None => None,
+            };
+            Host::new(&name, port, tls_name.as_deref()).map(|host| HostArg(host._as))
+        }
+    }
+
+    // `_HostLike` is a stub-only protocol that postprocess_stubs.py defines.
+    impl PyStubType for HostArg {
+        fn type_output() -> TypeInfo {
+            Host::type_input() | TypeInfo::unqualified("_HostLike")
         }
     }
 

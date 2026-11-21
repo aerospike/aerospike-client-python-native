@@ -512,6 +512,34 @@ def ensure_exports(content: str) -> str:
     return content
 
 
+HOST_LIKE_PROTOCOL = '''class _HostLike(typing.Protocol):
+    r"""
+    Any object with a host's name and port, such as the host class of a
+    layer above. The seed candidate providers accept it in place of
+    :class:`Host`, and also read a ``tls_name`` attribute when it has one.
+    """
+    @property
+    def name(self) -> builtins.str: ...
+    @property
+    def port(self) -> builtins.int: ...
+
+'''
+
+
+def add_host_like_protocol(content: str) -> str:
+    """Define the stub-only ``_HostLike`` protocol the provider signatures name.
+
+    It has no runtime counterpart, so it must be added after ``__all__`` is
+    built: ``from ._native import *`` would otherwise promise a name the
+    extension does not have.
+    """
+    first_class = re.search(r'^class ', content, re.MULTILINE)
+    if '_HostLike' not in content or 'class _HostLike(' in content or not first_class:
+        return content
+    print("  ✓ Added the _HostLike protocol")
+    return content[:first_class.start()] + HOST_LIKE_PROTOCOL + content[first_class.start():]
+
+
 def add_dunder_all(content: str) -> str:
     """Generate __all__ from top-level class/function definitions so `import *` is resolved by all type checkers."""
     names = sorted(set(
@@ -730,6 +758,7 @@ def postprocess_stubs(pyi_file_path: str):
         content = fix_circular_classattr_refs(content)
         content = fix_richcmp_stubs(content)
         content = add_dunder_all(content)
+        content = add_host_like_protocol(content)
 
         # When processing native module, ensure package structure exists
         # Always create/regenerate main package __init__.pyi
